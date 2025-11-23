@@ -3,10 +3,10 @@
 ## Research Implementation & Hackathon Validation
 
 [![HF MCP Hackathon](https://img.shields.io/badge/HF_MCP-Hackathon-orange)](https://huggingface.co/MCP-1st-Birthday)
-[![Research Paper](https://img.shields.io/badge/Research-Paper-blue)](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Deep Dive Article](https://img.shields.io/badge/Research-Paper-blue)](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
 
-> **Translating research into production:** This repository implements the **Context-Conditioned Intent Activation (CCIA)** hypothesis from our research paper "[The Geometry of Intention: How LLMs Recognize Human Goals in Marketing](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)". We're validating the approach through the HuggingFace MCP Hackathon to gather real-world feedback and demonstrate practical applications.
+
+> **Translating research into production:** This repository implements the **Context-Conditioned Intent Activation (CCIA)** hypothesis from our article "[The Geometry of Intention: How LLMs Recognize Human Goals in Marketing](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)". We're validating the approach through the HuggingFace MCP Hackathon to gather real-world feedback and demonstrate practical applications.
 
 ---
 
@@ -32,7 +32,7 @@ This implementation is based on convergent findings from four scientific discipl
 - Nature 2024 & PNAS 2024: LLM theory-of-mind capabilities
 - Scientific Reports 2025: LLM + knowledge graphs for intention recognition
 
-**Full Research Article**: [The Geometry of Intention](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
+**Full Article**: [The Geometry of Intention](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
 
 ---
 
@@ -55,25 +55,25 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 - Bid optimization tool (planned)
 
 **Track 2: MCP in Action (Enterprise)**
-- Full marketing intelligence agent (planned)
+- Full marketing intelligence agent
 - Autonomous campaign analysis
 - Multi-tool orchestration
 
 ### Post-Hackathon Roadmap
 
-**Phase 1: OpenAI Apps SDK Integration** (Q1 2026)
+**Phase 1: OpenAI Apps SDK Integration** 
 - Same MCP foundation → Works in ChatGPT
 - Reach 800M+ weekly ChatGPT users
 - Widget-based visualizations
 - OAuth authentication for production
 
-**Phase 2: Enterprise Production** (Q2 2026)
+**Phase 2: Enterprise Production** 
 - PostgreSQL + Redis (replace SQLite + in-memory)
 - Kubernetes deployment
 - Multi-channel context capture
 - Real-time audience activation
 
-**Phase 3: Research Publication** (Q3 2026)
+**Phase 3: Research Publication** 
 - Publish findings from real-world deployment
 - Share anonymized performance metrics
 - Open-source refined methodology
@@ -82,7 +82,7 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 
 ## 🏗️ Architecture
 
-### The Four-Layer System (From Research Paper)
+### The Four-Layer System
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
