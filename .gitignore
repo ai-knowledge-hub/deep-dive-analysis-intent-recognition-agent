@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Data & Outputs
+data/*.db
+data/*.csv
+data/*.json
+!data/sample_*.json
+!data/sample_*.csv
+
+# Secrets
+.env
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Gradio
+gradio_cached_examples/
+flagged/

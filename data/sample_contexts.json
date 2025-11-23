@@ -1,0 +1,102 @@
+[
+  {
+    "name": "High Intent Purchase - Marathon Runner",
+    "user_query": "nike pegasus 40 stability features",
+    "page_type": "product_detail",
+    "previous_actions": "searched_marathon_shoes,viewed_3_products,read_reviews,zoomed_arch_support_image,checked_return_policy",
+    "time_on_page": 245,
+    "session_history": "[{\"intent\": \"category_research\", \"timestamp\": \"2025-01-15T10:00:00\"}, {\"intent\": \"compare_options\", \"timestamp\": \"2025-01-15T10:15:00\"}]",
+    "expected_intent": "ready_to_purchase",
+    "expected_confidence": 0.85
+  },
+  {
+    "name": "Comparison Shopping - Budget Conscious",
+    "user_query": "best running shoes under $100",
+    "page_type": "search_results",
+    "previous_actions": "filtered_by_price,sorted_by_price,viewed_2_products",
+    "time_on_page": 120,
+    "session_history": "",
+    "expected_intent": "price_discovery",
+    "expected_confidence": 0.75
+  },
+  {
+    "name": "Gift Shopping - Last Minute",
+    "user_query": "popular gifts for runners",
+    "page_type": "category",
+    "previous_actions": "viewed_gift_guide,clicked_best_sellers,viewed_gift_wrap_options",
+    "time_on_page": 90,
+    "session_history": "",
+    "expected_intent": "gift_shopping",
+    "expected_confidence": 0.80
+  },
+  {
+    "name": "Early Research - New to Category",
+    "user_query": "how to choose running shoes",
+    "page_type": "blog_post",
+    "previous_actions": "read_buying_guide,clicked_category_overview",
+    "time_on_page": 180,
+    "session_history": "",
+    "expected_intent": "category_research",
+    "expected_confidence": 0.90
+  },
+  {
+    "name": "Active Comparison - Multi-Session",
+    "user_query": "nike pegasus vs asics gel kayano",
+    "page_type": "comparison_page",
+    "previous_actions": "viewed_product_a,viewed_product_b,read_reviews_both,compared_specs",
+    "time_on_page": 300,
+    "session_history": "[{\"intent\": \"category_research\", \"timestamp\": \"2025-01-10T14:00:00\"}, {\"intent\": \"price_discovery\", \"timestamp\": \"2025-01-12T16:00:00\"}]",
+    "expected_intent": "compare_options",
+    "expected_confidence": 0.92
+  },
+  {
+    "name": "Deal Seeker - Waiting for Sale",
+    "user_query": "nike pegasus 40 discount",
+    "page_type": "product_detail",
+    "previous_actions": "added_to_wishlist,clicked_price_alert,viewed_promo_page",
+    "time_on_page": 60,
+    "session_history": "[{\"intent\": \"compare_options\", \"timestamp\": \"2025-01-10T10:00:00\"}, {\"intent\": \"evaluate_fit\", \"timestamp\": \"2025-01-11T15:00:00\"}]",
+    "expected_intent": "deal_seeking",
+    "expected_confidence": 0.88
+  },
+  {
+    "name": "Problem-Focused - Injury Prevention",
+    "user_query": "running shoes for plantar fasciitis",
+    "page_type": "search_results",
+    "previous_actions": "read_medical_article,viewed_stability_shoes,read_injury_prevention_reviews",
+    "time_on_page": 200,
+    "session_history": "[{\"intent\": \"category_research\", \"timestamp\": \"2025-01-14T09:00:00\"}]",
+    "expected_intent": "evaluate_fit",
+    "expected_confidence": 0.85
+  },
+  {
+    "name": "Casual Browsing - Low Intent",
+    "user_query": "",
+    "page_type": "homepage",
+    "previous_actions": "viewed_homepage",
+    "time_on_page": 15,
+    "session_history": "",
+    "expected_intent": "browsing_inspiration",
+    "expected_confidence": 0.70
+  },
+  {
+    "name": "Cart Abandoner - Price Sensitive",
+    "user_query": "running shoes coupon code",
+    "page_type": "cart",
+    "previous_actions": "added_to_cart,searched_coupon,viewed_competitor_prices",
+    "time_on_page": 90,
+    "session_history": "[{\"intent\": \"ready_to_purchase\", \"timestamp\": \"2025-01-15T14:00:00\"}]",
+    "expected_intent": "deal_seeking",
+    "expected_confidence": 0.82
+  },
+  {
+    "name": "Professional Buyer - Bulk Order",
+    "user_query": "athletic shoes bulk order corporate",
+    "page_type": "category",
+    "previous_actions": "viewed_corporate_sales,requested_quote,viewed_bulk_pricing",
+    "time_on_page": 180,
+    "session_history": "",
+    "expected_intent": "compare_options",
+    "expected_confidence": 0.75
+  }
+]

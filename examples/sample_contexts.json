@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Product Detail – High Intent Runner",
+    "user_query": "nike pegasus 41 arch support",
+    "page_type": "product_detail",
+    "previous_actions": "read_reviews,checked_return_policy,zoomed_images",
+    "time_on_page": 210,
+    "session_history": "[{\"intent\": \"compare_options\"}]",
+    "expected_intent": "ready_to_purchase"
+  },
+  {
+    "name": "Price Research – Budget Shopper",
+    "user_query": "best running shoes under 120",
+    "page_type": "search_results",
+    "previous_actions": "sorted_by_price,viewed_2_products",
+    "time_on_page": 95,
+    "session_history": "[]",
+    "expected_intent": "price_discovery"
+  },
+  {
+    "name": "Gift Browsing",
+    "user_query": "popular gifts for marathon runners",
+    "page_type": "category",
+    "previous_actions": "viewed_gift_guide,clicked_best_sellers",
+    "time_on_page": 140,
+    "session_history": "[]",
+    "expected_intent": "gift_shopping"
+  }
+]

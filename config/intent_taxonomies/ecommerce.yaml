@@ -1,0 +1,223 @@
+name: "Ecommerce Intent Taxonomy"
+version: "1.0"
+description: "Standard intent taxonomy for ecommerce retail"
+domain: "ecommerce"
+
+intents:
+  # Awareness Stage
+  browsing_inspiration:
+    stage: awareness
+    description: "User is exploring with no specific goal, seeking inspiration"
+    typical_signals:
+      - high_page_variety
+      - low_time_per_page
+      - no_search_queries
+      - category_browsing
+    conversion_likelihood: 0.05
+
+  category_research:
+    stage: awareness
+    description: "Learning about product types and categories"
+    typical_signals:
+      - category_page_views
+      - guide_reading
+      - comparison_article_views
+      - educational_content_consumption
+    conversion_likelihood: 0.12
+
+  # Consideration Stage
+  compare_options:
+    stage: consideration
+    description: "Evaluating specific alternatives against each other"
+    typical_signals:
+      - multiple_product_views
+      - comparison_tool_usage
+      - review_reading
+      - spec_comparison
+      - back_and_forth_navigation
+    conversion_likelihood: 0.35
+
+  price_discovery:
+    stage: consideration
+    description: "Understanding cost ranges and seeking value"
+    typical_signals:
+      - price_filter_usage
+      - sort_by_price
+      - promotion_page_views
+      - coupon_search
+    conversion_likelihood: 0.22
+
+  evaluate_fit:
+    stage: consideration
+    description: "Assessing whether specific product solves their problem"
+    typical_signals:
+      - detailed_product_page_reading
+      - zoom_on_specifications
+      - review_focus_on_problems
+      - qa_section_reading
+      - size_guide_usage
+    conversion_likelihood: 0.48
+
+  # Decision Stage
+  ready_to_purchase:
+    stage: decision
+    description: "High buying intent, doing final validation before purchase"
+    typical_signals:
+      - add_to_cart
+      - checkout_initiation
+      - shipping_calculator_usage
+      - return_policy_view
+      - payment_options_check
+    conversion_likelihood: 0.72
+
+  deal_seeking:
+    stage: decision
+    description: "Waiting for promotion or discount before buying"
+    typical_signals:
+      - coupon_search
+      - sale_page_visits
+      - price_alert_signup
+      - wishlist_addition
+      - cart_abandonment_with_high_engagement
+    conversion_likelihood: 0.38
+
+  gift_shopping:
+    stage: decision
+    description: "Purchasing for someone else, different evaluation criteria"
+    typical_signals:
+      - gift_filter_usage
+      - gift_guide_views
+      - gift_card_consideration
+      - popular_items_browsing
+      - gift_wrap_options_viewed
+    conversion_likelihood: 0.55
+
+  # Post-Purchase
+  support_seeking:
+    stage: post_purchase
+    description: "Looking for help with existing purchase"
+    typical_signals:
+      - help_center_visits
+      - order_tracking
+      - contact_form_access
+      - return_policy_reading
+    conversion_likelihood: 0.0
+
+# Confidence Modifiers
+# These adjust base confidence based on specific behavioral signals
+confidence_modifiers:
+  strong_signals:
+    add_to_cart: 0.25
+    checkout_initiated: 0.35
+    review_reading: 0.15
+    product_zoom: 0.12
+    size_guide_used: 0.18
+    multiple_visits: 0.10
+
+  weak_signals:
+    single_page_view: -0.08
+    high_bounce: -0.15
+    short_session: -0.10
+
+  temporal_factors:
+    returning_user_7_days: 0.12
+    returning_user_30_days: 0.08
+    recent_purchase_7_days: -0.25
+    recent_purchase_30_days: -0.15
+    session_duration_long: 0.10
+    weekend_browsing: -0.05
+    weekday_professional_hours: 0.08
+
+# Intent Transition Probabilities
+# What intent is likely to follow another
+transitions:
+  browsing_inspiration:
+    - category_research: 0.35
+    - compare_options: 0.15
+    - exit: 0.50
+
+  category_research:
+    - compare_options: 0.40
+    - evaluate_fit: 0.25
+    - exit: 0.35
+
+  compare_options:
+    - evaluate_fit: 0.45
+    - ready_to_purchase: 0.20
+    - deal_seeking: 0.15
+    - exit: 0.20
+
+  evaluate_fit:
+    - ready_to_purchase: 0.55
+    - compare_options: 0.15
+    - deal_seeking: 0.10
+    - exit: 0.20
+
+  price_discovery:
+    - deal_seeking: 0.40
+    - compare_options: 0.25
+    - exit: 0.35
+
+  deal_seeking:
+    - ready_to_purchase: 0.30
+    - exit: 0.70
+
+  ready_to_purchase:
+    - conversion: 0.72
+    - deal_seeking: 0.10
+    - exit: 0.18
+
+# Recommended Actions by Intent
+recommended_actions:
+  browsing_inspiration:
+    - show_trending_products
+    - display_curated_collections
+    - show_lifestyle_imagery
+    - bid_modifier: -0.40
+
+  category_research:
+    - show_buying_guides
+    - display_comparison_tables
+    - show_category_best_sellers
+    - bid_modifier: -0.15
+
+  compare_options:
+    - enable_comparison_tool
+    - show_detailed_specs
+    - highlight_differentiators
+    - display_reviews
+    - bid_modifier: +0.25
+
+  evaluate_fit:
+    - show_size_guides
+    - display_qa_section
+    - show_problem_specific_reviews
+    - offer_expert_help
+    - bid_modifier: +0.40
+
+  price_discovery:
+    - show_value_messaging
+    - display_price_matching
+    - show_bundle_deals
+    - bid_modifier: +0.10
+
+  ready_to_purchase:
+    - show_fast_shipping
+    - display_secure_checkout_badges
+    - offer_chat_support
+    - show_easy_returns
+    - bid_modifier: +0.75
+
+  deal_seeking:
+    - show_current_promotions
+    - display_coupon_codes
+    - offer_email_signup_discount
+    - show_price_drop_alerts
+    - bid_modifier: +0.15
+
+  gift_shopping:
+    - show_gift_guides
+    - display_gift_wrap_options
+    - show_popular_gifts
+    - offer_gift_messaging
+    - bid_modifier: +0.50
