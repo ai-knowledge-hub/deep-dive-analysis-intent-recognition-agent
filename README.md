@@ -485,28 +485,6 @@ Based on research, we expect:
 
 ---
 
-## 📈 Real-World Impact (From Research)
-
-Testing with an athletic footwear retailer showed:
-
-| Metric | Baseline | With Intent Recognition | Improvement |
-|--------|----------|------------------------|-------------|
-| **CTR** | 2.1% | 3.4% | **+62%** |
-| **Conversion Rate** | 1.8% | 2.4% | **+35%** |
-| **CPA** | $48 | $36 | **-25%** |
-| **ROAS** | 2.8x | 4.2x | **+50%** |
-| **Revenue (4 weeks)** | $1.2M | $1.62M | **+$420K** |
-
-**How It Works**:
-1. Intent recognition identifies "ready_to_purchase" users (72% conversion likelihood)
-2. Bid optimizer increases bids by +75% for these users
-3. Personalization engine shows urgency messaging and fast shipping
-4. Conversion rate for this segment jumps to 5.2% (vs 1.8% baseline)
-
-**Full Case Study**: See [docs/article.md](docs/article.md)
-
----
-
 ## 🔄 From Research to Production
 
 ### Design Philosophy
@@ -536,37 +514,27 @@ Testing with an athletic footwear retailer showed:
 - ✅ Marketing recommendations
 - ✅ Real-time inference
 
-### Migration Path (Post-Hackathon)
-
-**Week 1**: PostgreSQL + Redis
-**Week 2**: FastAPI migration
-**Week 3**: Kubernetes deployment
-**Week 4**: Ad platform integrations
-**Week 8**: Pattern discovery at scale
-
-**Detailed Guide**: See [ENTERPRISE_UPGRADE.md](ENTERPRISE_UPGRADE.md) (coming soon)
-
 ---
 
 ## 🌐 OpenAI Apps SDK Integration
 
 ### Why This Matters
 
-The same MCP foundation that powers our hackathon submission will work in **ChatGPT** via OpenAI Apps SDK, reaching **800M+ weekly users**.
+The same MCP foundation that powers our hackathon submission will work in **ChatGPT** via OpenAI Apps SDK, reaching **700M+ weekly users**.
 
 ### Timeline
 
-**Q4 2025** (Now): HuggingFace MCP Hackathon
+* HuggingFace MCP Hackathon
 - Validate core functionality
 - Gather user feedback
 - Prove technical feasibility
 
-**Q1 2026**: OpenAI Apps SDK Integration
+* OpenAI Apps SDK Integration
 - Add widget-based visualizations
 - Implement OAuth authentication
 - Submit to OpenAI App Store
 
-**Q2 2026**: Public Launch
+* Public Launch
 - Available in ChatGPT conversations
 - Monetization via Agentic Commerce Protocol
 - Enterprise tier with advanced features
@@ -585,8 +553,6 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 - OAuth 2.1 for production
 - Usage analytics
 
-**Full Analysis**: See [docs/openai-apps-integration.md](docs/openai-apps-integration.md)
-
 ---
 
 ## 🏅 Hackathon Submission Details
@@ -600,13 +566,7 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 - Works standalone in Cursor, Claude Desktop, ChatGPT
 - Solves real business problem ($500B digital marketing market)
 
-**Demo Video Focus**:
-- Show problem (traditional analytics vs. intent recognition)
-- Demonstrate tool in Cursor/Claude Desktop
-- Show real marketing scenarios
-- Explain research foundation
-
-### Track 2: MCP in Action (Planned)
+### Track 2: MCP in Action
 
 **Tag**: `mcp-in-action-track-enterprise`
 
@@ -615,13 +575,6 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 - Chat interface for campaign analysis
 - Autonomous use of intent recognition + pattern discovery + bid optimization
 - Real-time recommendations
-
-### Sponsor Award Targets
-
-- **Modal Innovation Award** ($2,500): GPU inference for pattern discovery
-- **LlamaIndex Award** ($1,000): RAG for historical pattern retrieval
-- **Google Gemini Award** ($10-30K credits): Multi-modal intent recognition
-- **Community Choice Award** ($1,000): Social engagement strategy
 
 ---
 
@@ -689,21 +642,14 @@ If you use this work in research or production, please cite:
 - **Research Article**: [The Geometry of Intention](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
 - **HuggingFace Space**: [Coming Soon]
 - **Demo Video**: [Coming Soon]
-- **GitHub Repository**: [Your Repo URL]
+- **GitHub Repository**: [GitHub URL](https://github.com/ai-knowledge-hub/deep-dive-analysis-intent-recognition-agent)
 - **Hackathon**: [HF MCP Hackathon](https://huggingface.co/MCP-1st-Birthday)
 
 ---
 
-## 📧 Contact
+**Questions about the research?** Open a [Discussion](https://github.com/orgs/ai-knowledge-hub/discussions)
 
-- **Project Lead**: [Your Name]
-- **Email**: [Your Email]
-- **Twitter/X**: [Your Handle]
-- **LinkedIn**: [Your Profile]
-
-**Questions about the research?** Open a [Discussion](https://github.com/YOUR_USERNAME/intent-recognition-agent/discussions)
-
-**Found a bug?** Open an [Issue](https://github.com/YOUR_USERNAME/intent-recognition-agent/issues)
+**Found a bug?** Open an [Issue](https://github.com/ai-knowledge-hub/deep-dive-analysis-intent-recognition-agent/issues)
 
 **Want to collaborate?** Reach out via email or LinkedIn
 
@@ -716,61 +662,6 @@ If you use this work in research or production, please cite:
 - Nature 2024 & PNAS 2024 studies on LLM theory-of-mind
 - Scientific Reports 2025 on LLM intention recognition
 - Free Energy Principle research (Friston et al.)
-
-**Hackathon Support**:
-- **Anthropic**: Claude Sonnet 4 + $25K API credits
-- **HuggingFace**: Free Spaces hosting + community
-- **Gradio**: MCP integration + amazing framework
-- **OpenAI**: $25 API credits
-
-**Community**:
-- Marketing teams providing feedback
-- Early testers from Cursor/Claude communities
-- Open-source contributors
-
----
-
-## 🚀 Current Status
-
-### ✅ Completed (As of Nov 17, 2025)
-
-- [x] Core intent recognition engine
-- [x] Five-dimensional context capture
-- [x] LLM provider abstraction (Claude/GPT-4)
-- [x] Intent taxonomy (ecommerce)
-- [x] Gradio MCP tool (Track 1)
-- [x] Test suite with sample data
-- [x] Documentation and examples
-- [x] Requirements and configuration
-
-### 🔄 In Progress
-
-- [ ] Full marketing agent (Track 2)
-- [ ] Pattern discovery system
-- [ ] Bid optimizer tool
-- [ ] Deployment to HF Spaces
-- [ ] Demo video creation
-
-### 📅 Roadmap
-
-**Week 1** (Nov 17-24):
-- Complete full agent application
-- Deploy to HuggingFace Spaces
-- Create demo video
-- Test MCP integration with Cursor
-
-**Week 2** (Nov 25-30):
-- Add pattern discovery
-- Create second MCP tool
-- Social media campaign
-- Final polish and submission
-
-**Post-Hackathon** (Dec 2025+):
-- Add OpenAI Apps SDK widgets
-- Implement production database
-- Pattern discovery at scale
-- Enterprise deployment guide
-
 ---
 
 <div align="center">
