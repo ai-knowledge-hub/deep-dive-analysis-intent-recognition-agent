@@ -50,8 +50,8 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 ### Dual Track Submission
 
 **Track 1: Building MCP (Enterprise)**
-- Standalone intent recognition tool
-- Pattern discovery tool (planned)
+- ✅ Standalone intent recognition tool
+- ✅ Pattern discovery tool
 - Bid optimization tool (planned)
 
 **Track 2: MCP in Action (Enterprise)**
@@ -151,6 +151,7 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 
 Visit our deployed HuggingFace Space:
 - **Intent Recognition Tool**: [Your-Space-URL] (coming soon)
+- **Pattern Discovery Tool**: [Your-Space-URL] (coming soon)
 
 ### Option 2: Run Locally (5 minutes)
 
@@ -166,10 +167,13 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add your ANTHROPIC_API_KEY or OPENAI_API_KEY
 
-# Run the MCP tool
+# Run the Intent Recognition MCP tool
 python tools/intent_recognition_mcp.py
-
 # Open browser to http://localhost:7860
+
+# OR run the Pattern Discovery MCP tool
+python tools/pattern_discovery_mcp.py
+# Open browser to http://localhost:7861
 ```
 
 ### Option 3: Use as MCP Server
@@ -287,12 +291,12 @@ Each intent includes:
 **Research Foundation**: Evolutionary biology shows goal-directed behavior is universal but context-dependent.
 
 **Our Implementation**: Pattern discovery through behavioral embeddings
-- Intent sequence vectors (not demographic clusters)
-- Action pattern similarity
-- Temporal behavior analysis
-- Cross-channel journey mapping
+- ✅ 409-dimensional behavioral vectors (semantic + behavioral + temporal + constraints)
+- ✅ HDBSCAN clustering for automatic pattern discovery
+- ✅ LLM-powered persona generation from clusters
+- ✅ Temporal stability validation (>30% overlap = stable patterns)
 
-**Code**: Planned for [src/patterns/](src/patterns/) (post-hackathon priority)
+**Code**: [src/patterns/embedder.py](src/patterns/embedder.py), [src/patterns/clustering.py](src/patterns/clustering.py), [src/patterns/analyzer.py](src/patterns/analyzer.py)
 
 ### 5. Modular Architecture for Scientific Iteration
 
@@ -317,6 +321,7 @@ intent-recognition-agent/
 ├── requirements.txt                   # Python dependencies
 ├── .env.example                       # Environment template
 ├── .gitignore
+├── TESTING.md                         # Comprehensive testing guide
 │
 ├── src/                               # Core implementation
 │   ├── intent/                        # Layer 2: Intent Recognition
@@ -324,21 +329,23 @@ intent-recognition-agent/
 │   │   ├── taxonomy.py                # Intent taxonomy loader
 │   │   └── llm_provider.py            # LLM abstraction (Claude/GPT-4)
 │   │
-│   ├── patterns/                      # Layer 3: Pattern Discovery (planned)
-│   │   ├── embedder.py                # Behavioral embeddings
+│   ├── patterns/                      # Layer 3: Pattern Discovery ✅
+│   │   ├── embedder.py                # Behavioral embeddings (409D vectors)
 │   │   ├── clustering.py              # HDBSCAN clustering
-│   │   └── analyzer.py                # Pattern analysis
+│   │   ├── analyzer.py                # LLM persona generation
+│   │   └── visualizer.py              # Cluster visualizations
 │   │
 │   ├── activation/                    # Layer 4: Marketing Activation (planned)
 │   │   ├── bid_optimizer.py           # Bid modifier calculations
 │   │   └── audience_builder.py        # Segment creation
 │   │
 │   └── utils/                         # Layer 1: Context Capture
-│       └── context_builder.py         # Five-dimensional context
+│       ├── context_builder.py         # Five-dimensional context
+│       └── data_parsers.py            # Data parsing utilities ✅
 │
 ├── tools/                             # MCP Tools (Track 1)
 │   ├── intent_recognition_mcp.py      # Intent recognition tool ✅
-│   ├── pattern_discovery_mcp.py       # Pattern discovery (planned)
+│   ├── pattern_discovery_mcp.py       # Pattern discovery tool ✅
 │   └── bid_optimizer_mcp.py           # Bid optimization (planned)
 │
 ├── app.py                             # Full Agent (Track 2 - planned)
@@ -353,22 +360,23 @@ intent-recognition-agent/
 │
 ├── data/                              # Sample data
 │   ├── sample_contexts.json           # Test scenarios ✅
-│   └── sample_histories.csv           # User histories (planned)
+│   └── sample_user_histories.csv      # User session histories ✅
 │
 ├── tests/                             # Test suite
 │   ├── test_intent_engine.py          # Engine tests ✅
+│   ├── test_pattern_discovery_integration.py # Pattern discovery tests ✅
 │   ├── test_context_builder.py        # Context tests (planned)
 │   └── test_integration.py            # End-to-end tests (planned)
 │
 ├── examples/                          # Usage examples
-│   ├── basic_intent_recognition.py    # Direct usage ✅
-│   └── cursor_integration.py          # MCP integration (planned)
+│   ├── basic_intent_recognition.py    # Intent recognition ✅
+│   ├── test_embedder.py               # Embeddings test ✅
+│   └── test_clustering.py             # Full pipeline test ✅
 │
 └── docs/                              # Documentation
     ├── article.md                     # Full research article
     ├── hack-feasibility.md            # Hackathon adaptation analysis
-    ├── openai-apps-integration.md     # OpenAI Apps SDK roadmap
-    └── hack-repo-structure.md         # Repository design
+    └── openai-apps-integration.md     # OpenAI Apps SDK roadmap
 ```
 
 **Legend**: ✅ = Implemented | (planned) = Post-hackathon
@@ -445,6 +453,55 @@ print(f"Conversion Probability: {result['conversion_probability']:.0%}")
 # Output: 55%
 ```
 
+### Example 4: Pattern Discovery & Audience Segmentation
+
+```python
+from src.patterns.embedder import BehavioralEmbedder
+from src.patterns.clustering import PatternClusterer
+from src.patterns.analyzer import PatternAnalyzer
+import pandas as pd
+
+# Load user session histories from CSV
+df = pd.read_csv('data/sample_user_histories.csv')
+
+# Group sessions by user_id
+user_histories = []
+for user_id in df['user_id'].unique():
+    user_sessions = df[df['user_id'] == user_id].to_dict('records')
+    user_histories.append(user_sessions)
+
+# Step 1: Create behavioral embeddings (409-dimensional vectors)
+embedder = BehavioralEmbedder()
+embeddings = embedder.create_batch_embeddings(user_histories)
+# Shape: (n_users, 409)
+
+# Step 2: Discover behavioral patterns with HDBSCAN
+clusterer = PatternClusterer(min_cluster_size=30, min_samples=5)
+cluster_labels, viz_coords = clusterer.discover_patterns(embeddings)
+# Output: Found 3 behavioral patterns
+
+# Step 3: Generate LLM-powered personas
+analyzer = PatternAnalyzer()
+personas = analyzer.analyze_all_clusters(cluster_labels, user_histories)
+
+# View discovered personas
+for persona in personas:
+    print(f"\n{persona['persona_name']}")
+    print(f"Size: {persona['cluster_size']} users ({persona['percentage']:.1f}%)")
+    print(f"Description: {persona['description']}")
+    print(f"Recommended bid modifier: {persona['recommended_bid_modifier']:+.0%}")
+
+# Output example:
+# Research-Driven Comparers
+# Size: 50 users (29.4%)
+# Description: Methodical users who thoroughly evaluate options...
+# Recommended bid modifier: +25%
+```
+
+**Use Case**: Upload CSV of user histories → Discover 3-5 behavioral patterns → Get marketing personas → Export for ad platform targeting
+
+**Try it**: `python tools/pattern_discovery_mcp.py` then upload `data/sample_user_histories.csv`
+
 ---
 
 ## 🧪 Testing & Validation
@@ -468,20 +525,31 @@ pytest tests/test_intent_engine.py::TestIntentRecognitionEngine -v
 ### Test with Sample Data
 
 ```bash
-# Run example script with real API calls
+# Test intent recognition with 10 pre-built scenarios
 python examples/basic_intent_recognition.py
 
-# This will test with 10 pre-built scenarios from data/sample_contexts.json
+# Test behavioral embeddings
+python examples/test_embedder.py
+
+# Test full pattern discovery pipeline (requires dependencies installed)
+python examples/test_clustering.py
 ```
+
+For comprehensive testing instructions, see [TESTING.md](TESTING.md)
 
 ### Expected Results
 
-Based on research, we expect:
+**Intent Recognition:**
 - **60-65% accuracy** with minimal context (page + 1-2 signals)
 - **70-75% accuracy** with enhanced context (history + query analysis)
 - **75-82% accuracy** with rich context (all five dimensions)
+- Research Comparison: ACL 2024 study showed 68% accuracy for persuasive intent
 
-**Research Comparison**: ACL 2024 study showed 68% accuracy for persuasive intent with full conversation history.
+**Pattern Discovery:**
+- 3-5 distinct behavioral patterns from 100+ users
+- >30% cluster cohesion (stable patterns)
+- 10-20% noise/outliers (users who don't fit patterns)
+- LLM personas match cluster statistics
 
 ---
 
@@ -504,15 +572,22 @@ Based on research, we expect:
 | **Storage** | S3 + BigQuery | Local files | No cloud costs |
 | **Deployment** | Kubernetes | HF Spaces | One-click deploy |
 
-### What We Keep (100% Functionality)
+### What We Keep (100% Research Functionality)
 
+**Layer 1 & 2 (Intent Recognition):**
 - ✅ All intent recognition logic
 - ✅ Five-dimensional context capture
 - ✅ LLM integration (Claude/GPT-4)
 - ✅ Confidence calibration
 - ✅ Intent taxonomy system
 - ✅ Marketing recommendations
-- ✅ Real-time inference
+
+**Layer 3 (Pattern Discovery):**
+- ✅ 409-dimensional behavioral embeddings
+- ✅ HDBSCAN clustering algorithm
+- ✅ LLM-powered persona generation
+- ✅ Stability validation methodology
+- ✅ Visualization and export capabilities
 
 ---
 
@@ -562,9 +637,11 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 **Tag**: `building-mcp-track-enterprise`
 
 **What We're Submitting**:
-- Intent Recognition MCP Server ([tools/intent_recognition_mcp.py](tools/intent_recognition_mcp.py))
+- ✅ Intent Recognition MCP Server ([tools/intent_recognition_mcp.py](tools/intent_recognition_mcp.py))
+- ✅ Pattern Discovery MCP Server ([tools/pattern_discovery_mcp.py](tools/pattern_discovery_mcp.py))
 - Works standalone in Cursor, Claude Desktop, ChatGPT
 - Solves real business problem ($500B digital marketing market)
+- Complete Layer 2 & Layer 3 from research article
 
 ### Track 2: MCP in Action
 
@@ -590,7 +667,7 @@ This is both a research project and a hackathon submission. We welcome:
 
 **Post-Hackathon**:
 - Research contributions (new intent taxonomies, validation studies)
-- Production features (ad platform integrations, pattern discovery)
+- Production features (ad platform integrations, Layer 4 activation)
 - Performance optimizations
 - Enterprise deployment guides
 
