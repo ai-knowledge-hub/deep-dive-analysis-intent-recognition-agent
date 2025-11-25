@@ -14,13 +14,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
-import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from sklearn.cluster import KMeans
 
 from src.intent import IntentRecognitionEngine, IntentTaxonomy, LLMProviderFactory
 from src.utils import ContextBuilder
+from src.patterns import run_pattern_discovery, deserialize_uploaded_data
 
 
 # ---------------------------------------------------------------------------
@@ -136,127 +135,38 @@ def analyze_intent(
 # Pattern discovery helpers
 # ---------------------------------------------------------------------------
 
-from src.patterns.embedder import BehavioralEmbedder
-from src.patterns.clustering import PatternClusterer
-from src.patterns.analyzer import PatternAnalyzer
-from src.utils.data_parsers import parse_user_histories_from_csv, parse_user_histories_from_json
-
-
 def run_pattern_discovery_callback(
     uploaded_file: Optional[gr.File],
     include_sample_data: bool,
-    cluster_count: int,  # Kept for UI compatibility, but HDBSCAN finds count automatically
+    cluster_count: int,
 ) -> Tuple[pd.DataFrame, str, str]:
     """Cluster behavioral sessions and return summaries + persona JSON."""
 
-    user_histories = []
+    records: List[Dict[str, Any]] = []
 
-    # 1. Load Data
     if include_sample_data:
-        # Convert sample contexts to history format
-        # Each sample is treated as a single-session history for now
-        for sample in SAMPLE_CONTEXTS:
-            user_histories.append([sample])
+        records.extend(SAMPLE_CONTEXTS)
 
     if uploaded_file:
         try:
-            content = Path(uploaded_file.name).read_text(encoding="utf-8")
-            if uploaded_file.name.endswith(".csv"):
-                histories, _ = parse_user_histories_from_csv(content)
-                user_histories.extend(histories)
-            elif uploaded_file.name.endswith(".json"):
-                histories, _ = parse_user_histories_from_json(content)
-                user_histories.extend(histories)
-        except Exception as e:
-            return pd.DataFrame(), f"Error parsing file: {str(e)}", ""
+            file_path = Path(uploaded_file.name)
+            file_bytes = file_path.read_bytes()
+            records.extend(deserialize_uploaded_data(str(file_path), file_bytes))
+        except Exception as e:  # noqa: BLE001
+            return pd.DataFrame(), f"Error parsing file: {e}", ""
 
-    if not user_histories:
+    if not records:
         return pd.DataFrame(), "No data provided. Upload JSON/CSV or include samples.", ""
 
     try:
-        # 2. Create Embeddings
-        embedder = BehavioralEmbedder()
-        embeddings = embedder.create_batch_embeddings(user_histories)
-
-        # 3. Cluster (HDBSCAN)
-        # We use cluster_count from UI to hint min_cluster_size if possible, 
-        # but HDBSCAN is density-based. We'll map slider 2-6 to min_cluster_size 5-2
-        # to make it "feel" responsive, although it's not exact.
-        min_size = max(2, 7 - cluster_count) 
-        
-        clusterer = PatternClusterer(min_cluster_size=min_size, min_samples=1)
-        cluster_labels, _ = clusterer.discover_patterns(embeddings, create_visualization=False)
-
-        # 4. Analyze (LLM Personas)
-        # We use the shared LLM provider
-        analyzer = PatternAnalyzer(llm_provider=llm_provider)
-        personas = analyzer.analyze_all_clusters(cluster_labels, user_histories)
-
-        # 5. Format Output
-        summary_rows = []
-        for p in personas:
-            stats = p['statistics']
-            summary_rows.append({
-                "Cluster": p['persona']['persona_name'],
-                "Size": p['size'],
-                "Share": f"{p['percentage']:.1f}%",
-                "Top Intent": list(stats['intent_distribution'].keys())[0] if stats['intent_distribution'] else "Unknown",
-                "Avg Journey": f"{stats['avg_journey_length']:.1f}",
-                "Engagement": f"{stats['engagement_distribution'].get('high', 0) + stats['engagement_distribution'].get('very_high', 0):.0f}% High"
-            })
-        
-        summary_df = pd.DataFrame(summary_rows)
-        persona_json = json.dumps(personas, indent=2)
-        
-        # Markdown summary
-        md_lines = ["### Discovered Behavioral Patterns"]
-        for p in personas:
-            name = p['persona']['persona_name']
-            desc = p['persona']['description']
-            md_lines.append(f"**{name}**")
-            md_lines.append(f"> {desc}")
-            md_lines.append("")
-            
-        return summary_df, persona_json, "\n".join(md_lines)
-
-    except Exception as e:
-        import traceback
-        return pd.DataFrame(), f"Error in pipeline: {str(e)}\n{traceback.format_exc()}", ""
-
-
-# ---------------------------------------------------------------------------
-# MCP/API tab content
-# ---------------------------------------------------------------------------
-
-API_MD = """
-### 🔌 MCP & API Usage
-
-- **Run locally**: `python tools/intent_recognition_mcp.py`
-- **Web UI**: http://localhost:7860 (from this app)  
-- **MCP Endpoint**: `http://localhost:7860/gradio_api/mcp/sse`
-
-```json
-// Cursor/Claude MCP config snippet
-{
-  "servers": [
-    {
-      "name": "intent-recognition",
-      "type": "sse",
-      "url": "http://localhost:7860/gradio_api/mcp/sse"
-    }
-  ]
-}
-```
-
-#### Hugging Face Deployment (per docs/hack-feasibility.md)
-1. Push this repo to a Space with `sdk: gradio`
-2. Set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` secrets
-3. Enable `mcp_server=True` in `Demo.launch`
-
-#### OpenAI Apps SDK (see docs/openai-apps-integration.md)
-- The same MCP surface works in ChatGPT. Add `_meta.openai/outputTemplate` when ready.
-"""
-
+        summary_df, persona_json, markdown = run_pattern_discovery(
+            records=records,
+            cluster_count=cluster_count,
+            taxonomy=TAXONOMY,
+        )
+        return summary_df, persona_json, markdown
+    except Exception as e:  # noqa: BLE001
+        return pd.DataFrame(), f"Error during pattern discovery: {e}", ""
 
 # ---------------------------------------------------------------------------
 # Gradio Interface

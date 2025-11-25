@@ -194,13 +194,15 @@ class PatternAnalyzer:
 
             # Parse response
             persona = self._parse_persona_response(response)
+            if persona is None:
+                raise ValueError("Persona parsing returned None")
 
             print(f"   ✅ Persona generated: \"{persona.get('persona_name', 'Unknown')}\"")
 
             return persona
 
         except Exception as e:
-            print(f"   ⚠️  LLM generation failed: {e}")
+            print(f"   ⚠️  Persona generation fallback triggered: {e}")
             return self._create_fallback_persona(cluster_id, size, percentage, statistics)
 
     def _build_persona_prompt(
@@ -446,6 +448,10 @@ Generate the persona now (JSON only, no markdown formatting):"""
 
         personas = []
         total_users = len([l for l in cluster_labels if l != -1])  # Exclude noise from total
+
+        if total_users == 0 or not unique_labels:
+            print("\n⚠️  No valid clusters to analyze (all points classified as noise)")
+            return personas
 
         print(f"\n📊 Analyzing {len(unique_labels)} discovered patterns...")
 

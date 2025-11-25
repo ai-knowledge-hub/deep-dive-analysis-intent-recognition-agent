@@ -11,7 +11,7 @@ Key Research Finding: Stable patterns (>70% overlap across months) represent rea
 """
 
 import numpy as np
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, TYPE_CHECKING, Type, cast
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import warnings
@@ -20,11 +20,15 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning)
 
 try:
-    from hdbscan import HDBSCAN
+    from hdbscan import HDBSCAN as HDBSCANClass  # type: ignore[import-not-found]
     HDBSCAN_AVAILABLE = True
 except ImportError:
+    HDBSCANClass = None  # type: ignore[assignment]
     HDBSCAN_AVAILABLE = False
     print("⚠️  HDBSCAN not available. Install with: pip install hdbscan")
+
+if TYPE_CHECKING:
+    from hdbscan import HDBSCAN  # pragma: no cover
 
 
 class PatternClusterer:
@@ -51,7 +55,7 @@ class PatternClusterer:
         n_components_pca: int = 50
     ):
         """
-        Initialize the pattern clusterer.
+        Initialize the pattern clusterer. 
 
         Args:
             min_cluster_size: Minimum size for a cluster to be considered valid.
@@ -73,7 +77,8 @@ class PatternClusterer:
         self.n_components_pca = n_components_pca
 
         # Initialize clusterer
-        self.clusterer = HDBSCAN(
+        cluster_cls: Type["HDBSCAN"] = cast(Type["HDBSCAN"], HDBSCANClass)
+        self.clusterer = cluster_cls(
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
             metric=metric,
@@ -112,16 +117,32 @@ class PatternClusterer:
 
         From article: "Step 2: Measure similarity - Which users have similar signatures?"
         """
-        print(f"\n🔍 Discovering behavioral patterns from {embeddings.shape[0]} users...")
-        print(f"   Embedding dimensions: {embeddings.shape[1]}")
+        n_users, embed_dim = embeddings.shape
+        print(f"\n🔍 Discovering behavioral patterns from {n_users} users...")
+        print(f"   Embedding dimensions: {embed_dim}")
+
+        if n_users == 0:
+            raise ValueError("No embeddings provided for clustering")
+
+        if n_users < self.min_cluster_size:
+            warnings.warn(
+                "Number of samples is smaller than min_cluster_size; returning single cluster",
+                UserWarning
+            )
+            labels = np.zeros(n_users, dtype=int)
+            self.cluster_labels_ = labels
+            self.probabilities_ = np.ones(n_users)
+            self.outlier_scores_ = np.zeros(n_users)
+            self.visualization_coords_ = np.zeros((n_users, 2)) if create_visualization else None
+            return labels, self.visualization_coords_
 
         # Step 1: Standardize features (important for distance-based clustering)
         print("   📊 Standardizing features...")
         embeddings_scaled = self.scaler.fit_transform(embeddings)
 
         # Step 2: Optional PCA for dimensionality reduction
-        if use_pca and embeddings.shape[1] > self.n_components_pca:
-            print(f"   🔬 Reducing dimensions: {embeddings.shape[1]} → {self.n_components_pca} (PCA)")
+        if use_pca and embed_dim > self.n_components_pca:
+            print(f"   🔬 Reducing dimensions: {embed_dim} → {self.n_components_pca} (PCA)")
             embeddings_for_clustering = self.pca.fit_transform(embeddings_scaled)
             explained_variance = self.pca.explained_variance_ratio_.sum()
             print(f"   ✓ Explained variance: {explained_variance:.1%}")
@@ -131,6 +152,20 @@ class PatternClusterer:
         # Step 3: Run HDBSCAN clustering
         print(f"   🎯 Running HDBSCAN clustering...")
         print(f"      min_cluster_size={self.min_cluster_size}, min_samples={self.min_samples}")
+
+        if n_users < self.min_samples:
+            effective_min_samples = max(1, n_users)
+        else:
+            effective_min_samples = self.min_samples
+
+        cluster_cls: Type["HDBSCAN"] = cast(Type["HDBSCAN"], HDBSCANClass)
+        self.clusterer = cluster_cls(
+            min_cluster_size=min(self.min_cluster_size, n_users),
+            min_samples=effective_min_samples,
+            metric=self.metric,
+            cluster_selection_epsilon=self.cluster_selection_epsilon,
+            core_dist_n_jobs=-1
+        )
 
         self.clusterer.fit(embeddings_for_clustering)
 
@@ -251,7 +286,10 @@ class PatternClusterer:
         labels1, _ = self.discover_patterns(embeddings1, create_visualization=False)
         labels2_obj = PatternClusterer(
             min_cluster_size=self.min_cluster_size,
-            min_samples=self.min_samples
+            min_samples=self.min_samples,
+            metric=self.metric,
+            cluster_selection_epsilon=self.cluster_selection_epsilon,
+            n_components_pca=self.n_components_pca
         )
         labels2, _ = labels2_obj.discover_patterns(embeddings2, create_visualization=False)
 
