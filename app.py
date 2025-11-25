@@ -39,7 +39,7 @@ try:
 except Exception as exc:  # noqa: BLE001 - surface config errors to UI
     ENGINE_ERROR = (
         "Unable to initialize the Intent Recognition Engine.\n\n" \
-        f"Details: {exc}\n\nSet ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment."
+        f"Details: {exc}\n\nSet ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in your environment."
     )
 
 

@@ -141,11 +141,16 @@ class PatternClusterer:
         embeddings_scaled = self.scaler.fit_transform(embeddings)
 
         # Step 2: Optional PCA for dimensionality reduction
-        if use_pca and embed_dim > self.n_components_pca:
-            print(f"   🔬 Reducing dimensions: {embed_dim} → {self.n_components_pca} (PCA)")
-            embeddings_for_clustering = self.pca.fit_transform(embeddings_scaled)
-            explained_variance = self.pca.explained_variance_ratio_.sum()
-            print(f"   ✓ Explained variance: {explained_variance:.1%}")
+        if use_pca:
+            max_components = min(self.n_components_pca, embed_dim, n_users)
+            if max_components < embed_dim and max_components > 0:
+                print(f"   🔬 Reducing dimensions: {embed_dim} → {max_components} (PCA)")
+                self.pca = PCA(n_components=max_components)
+                embeddings_for_clustering = self.pca.fit_transform(embeddings_scaled)
+                explained_variance = self.pca.explained_variance_ratio_.sum()
+                print(f"   ✓ Explained variance: {explained_variance:.1%}")
+            else:
+                embeddings_for_clustering = embeddings_scaled
         else:
             embeddings_for_clustering = embeddings_scaled
 
@@ -222,7 +227,7 @@ class PatternClusterer:
 
         Returns detailed information for analysis and validation.
         """
-        if self.cluster_labels_ is None:
+        if self.cluster_labels_ is None or self.probabilities_ is None:
             raise ValueError("Must run discover_patterns() first")
 
         unique_labels = set(self.cluster_labels_)

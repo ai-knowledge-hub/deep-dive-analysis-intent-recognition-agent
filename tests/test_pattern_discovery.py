@@ -3,12 +3,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.patterns.discovery import (
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.patterns.discovery import (  # noqa: E402
     deserialize_uploaded_data,
     build_feature_dataframe,
     run_pattern_discovery,
 )
-from src.intent import IntentTaxonomy
+from src.intent import IntentTaxonomy  # noqa: E402
 
 
 def test_deserialize_uploaded_data_handles_json(tmp_path):

@@ -47,7 +47,7 @@ try:
 
 except Exception as e:
     print(f"❌ Error initializing engine: {e}")
-    print("Make sure you have set ANTHROPIC_API_KEY or OPENAI_API_KEY in your .env file")
+    print("Make sure you have set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in your .env file")
     sys.exit(1)
 
 
@@ -178,7 +178,7 @@ demo = gr.Interface(
     - 👥 Behavioral audience segmentation
     - 🔮 Predictive next-best-action
 
-    **Powered by**: Claude Sonnet 4 / GPT-4 with behavioral science-based intent taxonomy
+    **Powered by**: Claude Sonnet 4 / GPT-4 / OpenRouter models (e.g., Grok 4.1 Fast) with behavioral science-based intent taxonomy
 
     **Use Cases**:
     - Optimize ad bids based on purchase intent

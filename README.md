@@ -165,7 +165,10 @@ pip install -r requirements.txt
 
 # Set up environment variables
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY or OPENAI_API_KEY
+# Choose one provider section to populate:
+#   - ANTHROPIC_API_KEY (+ optional ANTHROPIC_MODEL)
+#   - OPENAI_API_KEY (+ optional OPENAI_MODEL)
+#   - OPENROUTER_API_KEY + OPENROUTER_MODEL (e.g., x-ai/grok-4.1-fast) plus optional OPENROUTER_SITE_URL/NAME
 
 # Run the Intent Recognition MCP tool
 python tools/intent_recognition_mcp.py
@@ -215,6 +218,49 @@ python tools/pattern_discovery_mcp.py
 ```
 
 ---
+
+## 🚀 Current Status
+
+### ✅ Completed
+- Core intent recognition engine + five-dimensional context capture
+- Multi-provider LLM abstraction (Anthropic, OpenAI, OpenRouter)
+- Intent taxonomy + Gradio MCP tool (Track 1)
+- Pattern discovery pipeline (`src/patterns/discovery.py`) + Gradio Pattern tab
+- Tests for engine and discovery modules
+
+### 🔄 In Progress
+- Track 2 autonomous marketing agent + bid optimizer
+- Hugging Face Space deployment + demo video
+
+---
+
+## 🧭 User Manual
+
+### Launching the App
+```bash
+python app.py
+```
+The Gradio UI runs on http://localhost:7860 and also exposes an MCP endpoint at /gradio_api/mcp/sse.
+
+### Tab 1 — Intent Analyzer
+- Fill in user query, page type, prior actions, and dwell time. Advanced controls let you override device, traffic source, scroll depth, and click count.
+- Use the sample dropdown to load scenarios from data/sample_contexts.json.
+- Click **Analyze Intent** to receive JSON plus a concise markdown summary (primary intent, confidence, bid modifier, conversion probability, recommended actions).
+- Provider selection is automatic based on your .env: Claude/OpenAI if those keys exist, otherwise OpenRouter (e.g., Grok 4.1 Fast).
+
+
+### Tab 2 — Pattern Discovery
+- Upload session data as JSON or CSV (one record per session) and/or toggle "Include sample sessions". Fields like user_query, page_type, previous_actions, time_on_page are automatically normalized.
+- Adjust the cluster slider to suggest how many personas you want to explore.
+- The app returns a cluster summary dataframe, persona JSON (ready for downstream use), and a human-readable markdown recap.
+
+### Tab 3 — MCP & API Guide
+- Shows the local MCP URL, configuration snippets for Cursor/Claude Desktop/ChatGPT, and deployment notes for Hugging Face Spaces + OpenRouter leaderboard headers.
+
+Use the app to iterate quickly on prompt changes, demonstrate behavioral personas to stakeholders, or export personas for campaign planning.
+
+---
+
 
 ## 📊 Intent Taxonomy
 

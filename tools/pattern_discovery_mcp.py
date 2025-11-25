@@ -156,25 +156,35 @@ def discover_behavioral_patterns(
         print("🔍 BEHAVIORAL PATTERN DISCOVERY PIPELINE")
         print("="*70)
 
-        if not csv_file:
-            return "❌ Error: No CSV file provided", "", "", ""
+        csv_path: Optional[str] = None
+
+        if isinstance(csv_file, str):
+            csv_path = csv_file
+        elif isinstance(csv_file, dict):
+            csv_path = csv_file.get("name") or csv_file.get("path")
+        elif hasattr(csv_file, "name"):
+            csv_path = getattr(csv_file, "name")
+
+        if not csv_path or not os.path.exists(csv_path):
+            return "❌ Error: No CSV file provided", "[]", "", ""
 
         # Read CSV content
-        with open(csv_file, 'r') as f:
+        with open(csv_path, 'r', encoding='utf-8') as f:
             csv_content = f.read()
 
         print(f"\n📁 Step 1: Loading User Histories")
         print("-"*70)
         user_histories, user_ids = parse_user_histories_from_csv(csv_content)
+        n_users = len(user_histories)
 
-        if len(user_histories) == 0:
-            return "❌ Error: No valid user histories found in CSV", "", "", ""
+        if n_users == 0:
+            return "❌ Error: No valid user histories found in CSV", "[]", "", ""
 
-        print(f"✅ Loaded {len(user_histories)} user histories")
+        print(f"✅ Loaded {n_users} user histories")
 
         # Calculate some basic stats
         total_sessions = sum(len(hist) for hist in user_histories)
-        avg_sessions = total_sessions / len(user_histories)
+        avg_sessions = total_sessions / n_users
         print(f"   Total sessions: {total_sessions}")
         print(f"   Avg sessions per user: {avg_sessions:.1f}")
 
@@ -188,8 +198,32 @@ def discover_behavioral_patterns(
         # Step 3: Discover patterns with HDBSCAN
         print(f"\n🎯 Step 3: Discovering Behavioral Patterns")
         print("-"*70)
+        requested_min_cluster_size = max(2, int(min_cluster_size))
+
+        if n_users <= 3:
+            recommended_cluster_size = n_users
+        else:
+            recommended_cluster_size = max(5, n_users // 3)
+
+        adaptive_min_cluster_size = min(
+            requested_min_cluster_size,
+            recommended_cluster_size if recommended_cluster_size > 0 else requested_min_cluster_size
+        )
+        adaptive_min_cluster_size = min(adaptive_min_cluster_size, n_users)
+        adaptive_min_cluster_size = max(adaptive_min_cluster_size, 2 if n_users >= 2 else n_users)
+
+        if adaptive_min_cluster_size != requested_min_cluster_size:
+            print(
+                f"   Adaptive min_cluster_size: {adaptive_min_cluster_size} "
+                f"(requested {requested_min_cluster_size}, users={n_users})"
+            )
+        else:
+            print(f"   Using min_cluster_size: {adaptive_min_cluster_size}")
+
+        min_samples = max(1, int(min_samples))
+
         clusterer = PatternClusterer(
-            min_cluster_size=min_cluster_size,
+            min_cluster_size=adaptive_min_cluster_size,
             min_samples=min_samples
         )
         cluster_labels, viz_coords = clusterer.discover_patterns(embeddings)
@@ -205,7 +239,7 @@ def discover_behavioral_patterns(
                 "  - Reducing min_cluster_size parameter\n"
                 "  - Adding more diverse user data\n"
                 "  - Checking data quality",
-                "",
+                "[]",
                 "",
                 ""
             )
@@ -215,7 +249,7 @@ def discover_behavioral_patterns(
 
         # Step 5: Generate personas (optional LLM step)
         personas = []
-        personas_json = ""
+        personas_json = "[]"
 
         if use_llm_personas:
             print(f"\n🤖 Step 5: Generating LLM-Powered Personas")
@@ -223,12 +257,11 @@ def discover_behavioral_patterns(
 
             try:
                 # Initialize LLM provider
-                if llm_provider.lower() == "anthropic":
-                    os.environ.setdefault('LLM_PROVIDER', 'anthropic')
-                elif llm_provider.lower() == "openai":
-                    os.environ.setdefault('LLM_PROVIDER', 'openai')
-
-                llm = LLMProviderFactory.create_from_env()
+                provider_name = llm_provider.lower()
+                if provider_name in {"anthropic", "openai", "openrouter"}:
+                    llm = LLMProviderFactory.create(provider_name=provider_name)
+                else:
+                    llm = LLMProviderFactory.create_from_env()
                 analyzer = PatternAnalyzer(llm_provider=llm)
 
                 # Analyze all clusters
@@ -237,7 +270,7 @@ def discover_behavioral_patterns(
                 print(f"✅ Generated {len(personas)} behavioral personas")
 
                 # Format personas as JSON
-                personas_json = json.dumps(personas, indent=2)
+                personas_json = json.dumps(personas, indent=2) if personas else "[]"
 
                 # Also create activation export
                 activation_data = analyzer.export_personas_for_activation(personas)
@@ -302,13 +335,16 @@ def discover_behavioral_patterns(
 
         summary_output = "\n".join(final_summary)
 
+        if not personas:
+            personas_json = personas_json or "[]"
+
         return summary_output, personas_json, cluster_plot_path, stats_plot_path
 
     except Exception as e:
         import traceback
         error_msg = f"❌ Error in pattern discovery pipeline:\n\n{str(e)}\n\n{traceback.format_exc()}"
         print(error_msg)
-        return error_msg, "", "", ""
+        return error_msg, "[]", "", ""
 
 
 # ============================================================================
@@ -368,12 +404,22 @@ def create_gradio_interface():
                 [Download Example CSV](https://github.com/your-repo/examples/sample_user_histories.csv)
                 """)
 
+                dataset_preset = gr.Radio(
+                    label="Data Size Preset",
+                    choices=[
+                        "Small Sample (≤200 users)",
+                        "Full Traffic (1000+ users)"
+                    ],
+                    value="Small Sample (≤200 users)",
+                    info="Apply recommended HDBSCAN settings for demo vs production data"
+                )
+
                 gr.Markdown("### ⚙️ Configuration")
 
                 min_cluster_size = gr.Slider(
-                    minimum=10,
+                    minimum=5,
                     maximum=100,
-                    value=30,
+                    value=12,
                     step=5,
                     label="Minimum Cluster Size",
                     info="Smaller = more patterns (may include noise)"
@@ -382,7 +428,7 @@ def create_gradio_interface():
                 min_samples = gr.Slider(
                     minimum=1,
                     maximum=20,
-                    value=5,
+                    value=4,
                     step=1,
                     label="Minimum Samples",
                     info="Higher = fewer, more stable patterns"
@@ -391,20 +437,32 @@ def create_gradio_interface():
                 use_llm = gr.Checkbox(
                     label="Generate LLM Personas",
                     value=True,
-                    info="Uses Claude/GPT-4 to create persona descriptions"
+                    info="Uses Anthropic/OpenAI/OpenRouter models to create persona descriptions"
                 )
 
                 llm_provider = gr.Radio(
-                    choices=["anthropic", "openai"],
+                    choices=["anthropic", "openai", "openrouter"],
                     value="anthropic",
                     label="LLM Provider",
-                    info="Requires ANTHROPIC_API_KEY or OPENAI_API_KEY in .env"
+                    info="Requires ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in .env"
                 )
 
                 discover_btn = gr.Button(
                     "🚀 Discover Patterns",
                     variant="primary",
                     size="lg"
+                )
+
+                def apply_preset(preset: str) -> Tuple[int, int]:
+                    """Map preset selections to recommended slider defaults."""
+                    if "Full Traffic" in preset:
+                        return 40, 10
+                    return 12, 4
+
+                dataset_preset.change(
+                    fn=apply_preset,
+                    inputs=dataset_preset,
+                    outputs=[min_cluster_size, min_samples]
                 )
 
         with gr.Row():
@@ -446,8 +504,8 @@ def create_gradio_interface():
             examples=[
                 [
                     None,  # csv_file (user will upload)
-                    30,    # min_cluster_size
-                    5,     # min_samples
+                    12,    # min_cluster_size
+                    4,     # min_samples
                     True,  # use_llm
                     "anthropic"  # llm_provider
                 ]
