@@ -10,7 +10,7 @@ This document explains how to test the complete CCIA (Context-Conditioned Intent
 
 ### Layer 2: Intent Recognition
 - ✅ `src/intent/engine.py` - Core intent recognition engine
-- ✅ `src/intent/llm_provider.py` - Claude/GPT-4 abstraction
+- ✅ `src/intent/llm_provider.py` - Claude/GPT-4/OpenRouter abstraction
 - ✅ `src/intent/taxonomy.py` - Intent taxonomy loader
 - ✅ `config/intent_taxonomies/ecommerce.yaml` - 8 intents
 - ✅ `config/prompts/intent_classification.txt` - LLM prompt template
