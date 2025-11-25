@@ -32,18 +32,15 @@ def plot_clusters(
     """
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Get unique clusters (excluding noise)
-    unique_labels = set(labels)
-    n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+    # Get unique clusters and separate noise
+    unique_labels = sorted(set(labels))
+    cluster_labels = [label for label in unique_labels if label != -1]
+    n_clusters = len(cluster_labels)
 
-    # Color map
-    colors = plt.cm.Spectral(np.linspace(0, 1, n_clusters))
-
-    # Plot each cluster
-    for i, (label, color) in enumerate(zip(sorted(unique_labels), colors)):
-        if label == -1:
-            # Noise points in gray
-            mask = labels == label
+    # Plot noise points first
+    if -1 in unique_labels:
+        mask = labels == -1
+        if mask.any():
             ax.scatter(
                 coordinates[mask, 0],
                 coordinates[mask, 1],
@@ -53,7 +50,11 @@ def plot_clusters(
                 label='Noise/Outliers',
                 marker='x'
             )
-        else:
+
+    # Color map for real clusters
+    if n_clusters > 0:
+        colors = plt.cm.Spectral(np.linspace(0, 1, n_clusters))
+        for color, label in zip(colors, cluster_labels):
             mask = labels == label
             count = mask.sum()
             percentage = count / len(labels) * 100
