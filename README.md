@@ -363,7 +363,6 @@ Each intent includes:
 ```
 intent-recognition-agent/
 ├── README.md                          # This file
-├── LICENSE                            # MIT License
 ├── requirements.txt                   # Python dependencies
 ├── .env.example                       # Environment template
 ├── .gitignore
@@ -725,22 +724,6 @@ This is both a research project and a hackathon submission. We welcome:
 5. Commit (`git commit -m 'Add amazing feature'`)
 6. Push (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-This allows:
-- ✅ Commercial use
-- ✅ Modification
-- ✅ Distribution
-- ✅ Private use
-
-Requirements:
-- Include copyright notice
-- Include license text
 
 ---
 

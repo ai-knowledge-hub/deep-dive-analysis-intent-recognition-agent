@@ -29,8 +29,6 @@ Track 2 Ready: Can be integrated into full marketing agent
 import os
 import sys
 import json
-import csv
-from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import tempfile
 
@@ -49,7 +47,6 @@ from src.intent.llm_provider import LLMProviderFactory
 # Gradio imports
 try:
     import gradio as gr
-    import numpy as np
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
     import matplotlib.pyplot as plt
