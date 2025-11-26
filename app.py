@@ -9,6 +9,8 @@ This UI mirrors the architecture in docs/article.md by exposing:
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,6 +46,7 @@ except Exception as exc:  # noqa: BLE001 - surface config errors to UI
 SAMPLE_CONTEXT_PATH = Path("data/sample_contexts.json")
 PATTERN_SAMPLE_PATH = Path("data/sample_user_histories.csv")
 ARTICLE_URL = "https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing"
+LLM_PROVIDER_CHOICES = ["anthropic", "openai", "openrouter"]
 CONTEXT_BUILDER = ContextBuilder()
 
 
@@ -98,6 +101,118 @@ def summarize_context_layers(context: Dict[str, Any]) -> str:
     return "\n".join(sections)
 
 
+def _normalize_settings(llm_settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    settings = llm_settings or {}
+    return {
+        "enabled": bool(settings.get("enabled")),
+        "provider": (settings.get("provider") or "openrouter").lower(),
+        "api_key": (settings.get("api_key") or "").strip(),
+        "model": (settings.get("model") or "").strip(),
+    }
+
+
+def _resolve_engine(llm_settings: Optional[Dict[str, Any]]) -> Tuple[Optional[IntentRecognitionEngine], Optional[str]]:
+    """Use override settings if provided, otherwise return default engine."""
+    settings = _normalize_settings(llm_settings)
+    if settings["enabled"]:
+        provider = settings["provider"] if settings["provider"] in LLM_PROVIDER_CHOICES else "openrouter"
+        provider_kwargs: Dict[str, Any] = {}
+        if settings["api_key"]:
+            provider_kwargs["api_key"] = settings["api_key"]
+        if settings["model"]:
+            provider_kwargs["model"] = settings["model"]
+        try:
+            llm = LLMProviderFactory.create(provider_name=provider, **provider_kwargs)
+            engine = IntentRecognitionEngine(llm_provider=llm, taxonomy=TAXONOMY)
+            return engine, None
+        except Exception as exc:
+            return None, f"LLM override error: {exc}"
+
+    return ENGINE, ENGINE_ERROR
+
+
+@contextmanager
+def _temporary_llm_env(llm_settings: Optional[Dict[str, Any]]):
+    settings = _normalize_settings(llm_settings)
+    if not settings["enabled"]:
+        yield
+        return
+
+    provider = settings["provider"]
+    api_key = settings["api_key"]
+    model = settings["model"]
+
+    env_map = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }
+    model_map = {
+        "anthropic": "ANTHROPIC_MODEL",
+        "openai": "OPENAI_MODEL",
+        "openrouter": "OPENROUTER_MODEL",
+    }
+
+    overrides: Dict[str, Optional[str]] = {}
+    if api_key and provider in env_map:
+        overrides[env_map[provider]] = api_key
+    if model and provider in model_map:
+        overrides[model_map[provider]] = model
+
+    if not overrides:
+        yield
+        return
+
+    previous = {key: os.environ.get(key) for key in overrides}
+    try:
+        for key, value in overrides.items():
+            if value is not None:
+                os.environ[key] = value
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def save_llm_settings(
+    enable_custom: bool,
+    provider: str,
+    api_key: str,
+    model: str,
+) -> Tuple[Dict[str, Any], str]:
+    """Persist LLM settings in a stateful dict."""
+    settings = {
+        "enabled": bool(enable_custom),
+        "provider": (provider or "openrouter").lower(),
+        "api_key": (api_key or "").strip(),
+        "model": (model or "").strip(),
+    }
+
+    if settings["enabled"]:
+        if not settings["api_key"]:
+            status = "⚠️ Custom mode enabled. Enter an API key to avoid server defaults."
+        else:
+            status = f"✅ Using custom {settings['provider'].title()} credentials (stored only in this session)."
+    else:
+        status = "Using server/.env credentials. Enable custom mode to provide your own key."
+
+    return settings, status
+
+
+def clear_llm_settings() -> Tuple[Dict[str, Any], str]:
+    default_settings = {
+        "enabled": False,
+        "provider": "openrouter",
+        "api_key": "",
+        "model": "",
+    }
+    status = "Cleared custom credentials. Falling back to server/.env settings."
+    return default_settings, status
+
+
 def load_sample_values(sample_name: str) -> Tuple[str, str, str, int, str]:
     """Return field defaults for the selected sample scenario."""
 
@@ -124,12 +239,14 @@ def analyze_intent(
     traffic_source: str,
     scroll_depth: float,
     clicks_count: int,
+    llm_settings: Optional[Dict[str, Any]],
 ) -> Tuple[str, str, Dict[str, Any], str]:
     """Run the intent recognition engine and return JSON + markdown summary + context."""
 
-    if ENGINE is None:
-        error_json = json.dumps({"error": True, "message": ENGINE_ERROR or ""}, indent=2)
-        return error_json, ENGINE_ERROR or "", {}, ""
+    engine, engine_error = _resolve_engine(llm_settings)
+    if engine is None:
+        error_json = json.dumps({"error": True, "message": engine_error or "LLM not configured"}, indent=2)
+        return error_json, engine_error or "", {}, ""
 
     # Build context preview (Layer 1)
     context_view = CONTEXT_BUILDER.build_context(
@@ -146,7 +263,7 @@ def analyze_intent(
     context_summary = summarize_context_layers(context_view)
 
     try:
-        result = ENGINE.recognize_intent(
+        result = engine.recognize_intent(
             user_query=user_query,
             page_type=page_type,
             previous_actions=previous_actions,
@@ -208,6 +325,7 @@ def run_pattern_discovery_full(
     min_samples: int,
     use_llm_personas: bool,
     llm_provider: str,
+    llm_settings: Optional[Dict[str, Any]],
 ) -> Tuple[str, Any, Optional[str], Optional[str]]:
     """
     Execute the full behavioral pattern discovery pipeline used by the MCP tool.
@@ -225,13 +343,14 @@ def run_pattern_discovery_full(
         )
 
     try:
-        summary, personas_json, cluster_plot, stats_plot = discover_behavioral_patterns(
-            csv_file=resolved_path,
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            use_llm_personas=use_llm_personas,
-            llm_provider=llm_provider,
-        )
+        with _temporary_llm_env(llm_settings):
+            summary, personas_json, cluster_plot, stats_plot = discover_behavioral_patterns(
+                csv_file=resolved_path,
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                use_llm_personas=use_llm_personas,
+                llm_provider=llm_provider,
+            )
     except Exception as exc:  # noqa: BLE001
         return (f"❌ Pattern discovery failed:\n\n{exc}", [], None, None)
 
@@ -256,6 +375,43 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
 
     if ENGINE_ERROR:
         gr.Markdown(f"⚠️ **Engine not initialized:** {ENGINE_ERROR}")
+
+    llm_state = gr.State(
+        {
+            "enabled": False,
+            "provider": "openrouter",
+            "api_key": "",
+            "model": "",
+        }
+    )
+
+    with gr.Accordion("LLM Settings (stored in your browser session)", open=False):
+        gr.Markdown(
+            "Bring your own API key to avoid using the demo credits. These values live only in this browser tab and reset on refresh."
+        )
+        enable_custom = gr.Checkbox(label="Use custom credentials", value=False)
+        provider_choice = gr.Dropdown(
+            choices=LLM_PROVIDER_CHOICES,
+            value="openrouter",
+            label="Provider",
+        )
+        api_key_box = gr.Textbox(label="API Key", type="password", placeholder="sk-...")
+        model_box = gr.Textbox(label="Preferred Model (optional)", placeholder="claude-3-sonnet-20240229")
+        with gr.Row():
+            save_llm_btn = gr.Button("Apply LLM Settings", variant="primary")
+            clear_llm_btn = gr.Button("Clear", variant="secondary")
+        llm_status = gr.Markdown("Using server/.env credentials.")
+
+        save_llm_btn.click(
+            fn=save_llm_settings,
+            inputs=[enable_custom, provider_choice, api_key_box, model_box],
+            outputs=[llm_state, llm_status],
+        )
+        clear_llm_btn.click(
+            fn=clear_llm_settings,
+            inputs=None,
+            outputs=[llm_state, llm_status],
+        )
 
     with gr.Tabs():
         with gr.Tab("Intent Analyzer"):
@@ -341,6 +497,7 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     traffic_source,
                     scroll_depth,
                     clicks_count,
+                    llm_state,
                 ],
                 outputs=[intent_json, intent_summary, context_json, context_summary],
             )
@@ -431,6 +588,7 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     min_samples,
                     use_llm_personas,
                     llm_provider,
+                    llm_state,
                 ],
                 outputs=[summary_output, personas_output, cluster_plot, stats_plot],
             )
