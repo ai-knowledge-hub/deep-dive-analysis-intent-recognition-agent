@@ -133,7 +133,6 @@ python examples/test_clustering.py
 - Generates 170 synthetic users (3 patterns + noise)
 - Creates behavioral embeddings
 - Discovers 3-4 distinct patterns via HDBSCAN
-- Generates visualizations: `pattern_clusters.png`, `pattern_statistics.png`
 - Shows cluster statistics and sample journeys
 
 **Success Criteria:**
@@ -158,8 +157,6 @@ python examples/test_clustering.py
    Pattern 1: 50 users (29.4%)
    Pattern 2: 50 users (29.4%)
 
-💾 Saved: pattern_clusters.png
-💾 Saved: pattern_statistics.png
 ```
 
 ---
@@ -229,25 +226,52 @@ python tools/pattern_discovery_mcp.py
 
 **How to Test:**
 1. Open browser to http://localhost:7861
-2. Upload `data/sample_user_histories.csv`
-3. Configure parameters:
-   - Minimum Cluster Size: 30
-   - Minimum Samples: 5
-   - Generate LLM Personas: ✓
-   - LLM Provider: anthropic
-4. Click "🚀 Discover Patterns"
-5. **Success Criteria**:
-   - Discovers 3-4 behavioral patterns
-   - Generates LLM personas with descriptions
-   - Shows cluster visualization
-   - Shows statistics plots
-   - JSON export available
+2. In **Data Size Preset**, keep the default **"Small Sample (≤200 users)"** option (auto-sets sliders to 12 / 4 for the bundled CSV). Switch to **"Full Traffic (1000+ users)"** when uploading a large production export; the sliders update automatically.
+3. Upload `data/sample_user_histories.csv`
+4. (Optional) Toggle **Generate LLM Personas** based on API access and choose your provider.
+5. Click "🚀 Discover Patterns"
+6. **Success Criteria**:
+   - Console shows the adaptive `min_cluster_size` message (~12) before clustering
+   - Discovers 3-4 behavioral patterns with personas (if enabled)
+   - JSON output panel contains persona objects (never blank)
+   - Cluster visualization and stats plot render
+   - Download buttons expose persona/activation data
 
 **Expected Personas:**
 - Research-Heavy Comparers (~25-30% of users)
 - Fast Impulse Buyers (~25-30% of users)
 - Budget-Conscious Deal Seekers (~25-30% of users)
 - Outliers/Noise (~10-20% of users)
+
+---
+
+### Test 7: Full Application Demo (Combined UI)
+
+**Command:**
+```bash
+python app.py
+```
+
+**Expected Output:**
+- Unified Gradio experience on the port printed in the console (usually http://localhost:7862 if the MCP tools use 7860/7861)
+- Tabs for Intent Analyzer, Pattern Discovery Lite, and MCP/API Guide
+
+**How to Test:**
+1. Launch the app and open the provided URL.
+2. **Intent Analyzer tab**:
+   - Load a sample scenario (e.g., "High-intent laptop researcher") and click **Analyze Intent**.
+   - Confirm JSON + summary match Test 5 behavior (intent, confidence, bid modifier).
+3. **Pattern Discovery tab**:
+   - Upload `data/sample_user_histories.csv` or enable the sample toggle.
+   - Choose cluster count = 3 (best fit for the sample) and run discovery.
+   - Verify personas + markdown summary render inline without console errors.
+4. **MCP/API Guide tab**:
+   - Confirm it lists both MCP endpoints (`tools/intent_recognition_mcp.py` @ 7860 and `tools/pattern_discovery_mcp.py` @ 7861) plus integration tips.
+
+**Success Criteria:**
+- Both tabs operate without stack traces in the terminal.
+- Results mirror standalone MCP tools.
+- Documentation tab accurately points to local MCP endpoints and README/TESTING docs.
 
 ---
 
@@ -353,9 +377,9 @@ export ANTHROPIC_API_KEY=your_key_here
 **Symptom:** `⚠️ No distinct patterns found`
 
 **Solution:**
-- Reduce `min_cluster_size` parameter (try 10-20 for small datasets)
-- Reduce `min_samples` parameter (try 2-3)
-- Ensure you have enough diverse data (minimum 30 users recommended)
+- Use the **Small Sample** preset so the sliders jump to 12 / 4 before uploading.
+- For even smaller datasets, manually set `min_cluster_size` below your total user count (the backend will also shrink it automatically).
+- Ensure you have enough diverse data (minimum ~30 users with multi-step journeys).
 
 ---
 
@@ -385,6 +409,7 @@ Before submitting to the hackathon, verify:
 - [ ] Sample CSV uploads and processes correctly
 - [ ] LLM personas generate successfully
 - [ ] Visualizations render correctly
+- [ ] Unified multi-tab Gradio app (`python app.py`) runs without errors
 - [ ] MCP protocol works with Cursor/Claude Desktop
 
 ---
@@ -404,16 +429,15 @@ Before submitting to the hackathon, verify:
 **Use Case:** Discover audience segments for campaign targeting
 
 1. Launch: `python tools/pattern_discovery_mcp.py`
-2. Upload: `data/sample_user_histories.csv`
-3. Expected: 3 personas with marketing insights
+2. Leave the preset on **Small Sample** and upload `data/sample_user_histories.csv`
+3. Expected: 3 personas with marketing insights + visualizations
 
 ### Demo 3: Research Validation
 
 **Use Case:** Validate CCIA hypothesis with synthetic data
 
 1. Run: `python examples/test_clustering.py`
-2. Review: `pattern_clusters.png` shows clear separation
-3. Verify: Stable patterns (>30% cohesion)
+2. Verify: Stable patterns (>30% cohesion)
 
 ---
 

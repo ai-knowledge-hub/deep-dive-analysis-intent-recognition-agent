@@ -9,17 +9,15 @@ This UI mirrors the architecture in docs/article.md by exposing:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
-import pandas as pd
 from dotenv import load_dotenv
 
 from src.intent import IntentRecognitionEngine, IntentTaxonomy, LLMProviderFactory
 from src.utils import ContextBuilder
-from src.patterns import run_pattern_discovery, deserialize_uploaded_data
+from tools.pattern_discovery_mcp import discover_behavioral_patterns
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +41,10 @@ except Exception as exc:  # noqa: BLE001 - surface config errors to UI
     )
 
 
-CONTEXT_BUILDER = ContextBuilder()
 SAMPLE_CONTEXT_PATH = Path("data/sample_contexts.json")
+PATTERN_SAMPLE_PATH = Path("data/sample_user_histories.csv")
+ARTICLE_URL = "https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing"
+CONTEXT_BUILDER = ContextBuilder()
 
 
 def _load_sample_contexts() -> List[Dict[str, Any]]:
@@ -61,6 +61,42 @@ SAMPLE_LOOKUP = {sample["name"]: sample for sample in SAMPLE_CONTEXTS}
 # ---------------------------------------------------------------------------
 # Intent Analyzer helpers
 # ---------------------------------------------------------------------------
+
+def summarize_context_layers(context: Dict[str, Any]) -> str:
+    """Create a human-readable summary of the context builder output."""
+    identity = context.get("identity_context", {})
+    historical = context.get("historical_context", {})
+    situational = context.get("situational_context", {})
+    behavioral = context.get("behavioral_signals", {})
+    temporal = context.get("temporal_signals", {})
+    constraints = context.get("constraint_signals", {})
+
+    def bool_to_str(val: Any) -> str:
+        return "Yes" if val else "No"
+
+    sections = [
+        f"**Identity**: role = `{identity.get('inferred_role', 'unknown')}`, "
+        f"device = `{identity.get('device_type', 'unknown')}`, "
+        f"returning = {bool_to_str(identity.get('is_returning_user'))}",
+        f"**History**: {historical.get('previous_session_count', 0)} prior sessions, "
+        f"actions this session = {historical.get('action_count', 0)}, "
+        f"past intents = {', '.join(historical.get('past_intents', []) or ['n/a'])}",
+        f"**Situation**: page = `{situational.get('page_type', 'unknown')}`, "
+        f"channel = `{situational.get('channel', 'unknown')}`, "
+        f"traffic = `{situational.get('traffic_source', 'unknown')}`",
+        f"**Behavior**: query = `{behavioral.get('current_query', '') or 'n/a'}`, "
+        f"engagement = `{behavioral.get('engagement_level', 'unknown')}`, "
+        f"actions taken = {len(behavioral.get('actions_taken', []))}",
+        f"**Temporal**: session #{temporal.get('session_number', 1)}, "
+        f"hour = {temporal.get('hour_of_day', 'n/a')}, "
+        f"is weekend = {bool_to_str(temporal.get('is_weekend'))}",
+        f"**Constraints**: budget = {bool_to_str(constraints.get('has_budget_constraint'))}, "
+        f"time = {bool_to_str(constraints.get('has_time_constraint'))}, "
+        f"knowledge gap = {bool_to_str(constraints.get('has_knowledge_gap'))}",
+    ]
+
+    return "\n".join(sections)
+
 
 def load_sample_values(sample_name: str) -> Tuple[str, str, str, int, str]:
     """Return field defaults for the selected sample scenario."""
@@ -88,11 +124,26 @@ def analyze_intent(
     traffic_source: str,
     scroll_depth: float,
     clicks_count: int,
-) -> Tuple[str, str]:
-    """Run the intent recognition engine and return JSON + markdown summary."""
+) -> Tuple[str, str, Dict[str, Any], str]:
+    """Run the intent recognition engine and return JSON + markdown summary + context."""
 
     if ENGINE is None:
-        return json.dumps({"error": True, "message": ENGINE_ERROR or ""}, indent=2), ENGINE_ERROR or ""
+        error_json = json.dumps({"error": True, "message": ENGINE_ERROR or ""}, indent=2)
+        return error_json, ENGINE_ERROR or "", {}, ""
+
+    # Build context preview (Layer 1)
+    context_view = CONTEXT_BUILDER.build_context(
+        user_query=user_query,
+        page_type=page_type,
+        previous_actions=previous_actions,
+        time_on_page=time_on_page,
+        session_history=session_history,
+        device_type=device_type,
+        traffic_source=traffic_source,
+        scroll_depth=scroll_depth,
+        clicks_count=clicks_count,
+    )
+    context_summary = summarize_context_layers(context_view)
 
     try:
         result = ENGINE.recognize_intent(
@@ -107,7 +158,8 @@ def analyze_intent(
             clicks_count=clicks_count,
         )
     except Exception as exc:  # noqa: BLE001
-        return json.dumps({"error": True, "message": str(exc)}, indent=2), f"Engine error: {exc}"
+        error_payload = json.dumps({"error": True, "message": str(exc)}, indent=2)
+        return error_payload, f"Engine error: {exc}", context_view, context_summary
 
     summary = [
         f"**Primary Intent:** {result.get('primary_intent', 'unknown').replace('_', ' ').title()}",
@@ -124,49 +176,71 @@ def analyze_intent(
     if nxt:
         summary.append("\n**Predicted Next Actions:**" + "\n" + "\n".join(f"- {item}" for item in nxt[:3]))
 
-    return json.dumps(result, indent=2), "\n".join(summary)
+    return json.dumps(result, indent=2), "\n".join(summary), context_view, context_summary
 
 
 # ---------------------------------------------------------------------------
-# Pattern discovery helpers
+# Pattern discovery helpers (MCP-aligned)
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Pattern discovery helpers
-# ---------------------------------------------------------------------------
+def _resolve_dataset_path(use_sample: bool, uploaded_path: Optional[str]) -> Optional[str]:
+    """Pick the CSV path to send into the MCP pipeline."""
+    if use_sample or not uploaded_path:
+        if PATTERN_SAMPLE_PATH.exists():
+            return str(PATTERN_SAMPLE_PATH)
+        return None
+    if uploaded_path and Path(uploaded_path).exists():
+        return uploaded_path
+    return None
 
-def run_pattern_discovery_callback(
-    uploaded_file: Optional[gr.File],
-    include_sample_data: bool,
-    cluster_count: int,
-) -> Tuple[pd.DataFrame, str, str]:
-    """Cluster behavioral sessions and return summaries + persona JSON."""
 
-    records: List[Dict[str, Any]] = []
+def _apply_dataset_preset(preset: str) -> Tuple[int, int]:
+    """Map dataset presets to recommended HDBSCAN parameters."""
+    if "Full Traffic" in preset:
+        return 40, 10
+    return 12, 4
 
-    if include_sample_data:
-        records.extend(SAMPLE_CONTEXTS)
 
-    if uploaded_file:
-        try:
-            file_path = Path(uploaded_file.name)
-            file_bytes = file_path.read_bytes()
-            records.extend(deserialize_uploaded_data(str(file_path), file_bytes))
-        except Exception as e:  # noqa: BLE001
-            return pd.DataFrame(), f"Error parsing file: {e}", ""
+def run_pattern_discovery_full(
+    csv_file_path: Optional[str],
+    use_sample_csv: bool,
+    min_cluster_size: int,
+    min_samples: int,
+    use_llm_personas: bool,
+    llm_provider: str,
+) -> Tuple[str, Any, Optional[str], Optional[str]]:
+    """
+    Execute the full behavioral pattern discovery pipeline used by the MCP tool.
 
-    if not records:
-        return pd.DataFrame(), "No data provided. Upload JSON/CSV or include samples.", ""
+    Returns:
+        summary_markdown, personas_json_obj, cluster_plot_path, stats_plot_path
+    """
+    resolved_path = _resolve_dataset_path(use_sample_csv, csv_file_path)
+    if not resolved_path:
+        return (
+            "❌ Provide a CSV file or enable the bundled sample dataset.",
+            [],
+            None,
+            None,
+        )
 
     try:
-        summary_df, persona_json, markdown = run_pattern_discovery(
-            records=records,
-            cluster_count=cluster_count,
-            taxonomy=TAXONOMY,
+        summary, personas_json, cluster_plot, stats_plot = discover_behavioral_patterns(
+            csv_file=resolved_path,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            use_llm_personas=use_llm_personas,
+            llm_provider=llm_provider,
         )
-        return summary_df, persona_json, markdown
-    except Exception as e:  # noqa: BLE001
-        return pd.DataFrame(), f"Error during pattern discovery: {e}", ""
+    except Exception as exc:  # noqa: BLE001
+        return (f"❌ Pattern discovery failed:\n\n{exc}", [], None, None)
+
+    try:
+        personas_obj = json.loads(personas_json) if personas_json else []
+    except json.JSONDecodeError:
+        personas_obj = {"raw": personas_json or "[]"}
+
+    return summary, personas_obj, (cluster_plot or None), (stats_plot or None)
 
 # ---------------------------------------------------------------------------
 # Gradio Interface
@@ -193,6 +267,10 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     interactive=True,
                 )
                 gr.Markdown("Select a sample to auto-fill the form, or enter custom signals below.")
+                gr.Markdown(
+                    f"[Layer 2: Intent Recognition]({ARTICLE_URL}) — research deep dive on how structured context activates LLM intent prediction.",
+                    elem_classes=["doc-link"],
+                )
 
             with gr.Row():
                 user_query = gr.Textbox(label="User Query", lines=2)
@@ -235,6 +313,12 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
             analyze_button = gr.Button("Analyze Intent", variant="primary")
             intent_json = gr.JSON(label="Intent Analysis JSON")
             intent_summary = gr.Markdown(label="Summary")
+            with gr.Row():
+                context_json = gr.JSON(label="Layer 1 Context (5D capture)")
+                context_summary = gr.Markdown(
+                    label="Context Highlights",
+                    value="Run an analysis to preview the structured context feeding the LLM.",
+                )
 
             def _populate_sample(sample_name: str):  # noqa: ANN001
                 return load_sample_values(sample_name)
@@ -258,27 +342,225 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     scroll_depth,
                     clicks_count,
                 ],
-                outputs=[intent_json, intent_summary],
+                outputs=[intent_json, intent_summary, context_json, context_summary],
             )
 
         with gr.Tab("Pattern Discovery"):
-            gr.Markdown("Upload behavioral sessions or use our samples to surface latent personas.")
-            upload = gr.File(label="Upload JSON/CSV of sessions", file_types=[".json", ".csv"], file_count="single")
-            include_samples = gr.Checkbox(label="Include sample sessions", value=True)
-            cluster_slider = gr.Slider(label="Cluster Count", minimum=2, maximum=6, step=1, value=3)
-            cluster_button = gr.Button("Generate Patterns", variant="primary")
-            cluster_df = gr.Dataframe(label="Cluster Summary", interactive=False)
-            persona_json = gr.JSON(label="Persona JSON")
-            persona_md = gr.Markdown()
-
-            cluster_button.click(
-                run_pattern_discovery_callback,
-                inputs=[upload, include_samples, cluster_slider],
-                outputs=[cluster_df, persona_json, persona_md],
+            gr.Markdown(
+                "Run the same Layer 3 pipeline used by the MCP tool: CSV → behavioral embeddings → HDBSCAN → LLM personas."
+            )
+            gr.Markdown(
+                f"[Layer 3: Pattern Discovery]({ARTICLE_URL}) — see how embeddings + HDBSCAN uncover intentional archetypes.",
+                elem_classes=["doc-link"],
+            )
+            csv_input = gr.File(
+                label="Upload User Sessions CSV",
+                file_types=[".csv"],
+                file_count="single",
+                type="filepath",
+                interactive=True,
+            )
+            use_sample_csv = gr.Checkbox(
+                label="Use bundled sample data (40 users, 3 patterns)",
+                value=True,
+                info="Disable to rely solely on your uploaded CSV.",
             )
 
+            dataset_preset = gr.Radio(
+                label="Data Size Preset",
+                choices=["Small Sample (≤200 users)", "Full Traffic (1000+ users)"],
+                value="Small Sample (≤200 users)",
+                info="Presets adjust min_cluster_size / min_samples to match your dataset scale.",
+            )
+
+            min_cluster_size = gr.Slider(
+                label="Minimum Cluster Size",
+                minimum=5,
+                maximum=100,
+                step=5,
+                value=12,
+                info="Lower values = more clusters (recommended for the sample CSV).",
+            )
+            min_samples = gr.Slider(
+                label="Minimum Samples",
+                minimum=1,
+                maximum=20,
+                step=1,
+                value=4,
+                info="Higher values = stricter, more stable clusters.",
+            )
+
+            use_llm_personas = gr.Checkbox(
+                label="Generate LLM Personas",
+                value=True,
+                info="Requires ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.",
+            )
+            llm_provider = gr.Radio(
+                label="LLM Provider",
+                choices=["anthropic", "openai", "openrouter"],
+                value="anthropic",
+            )
+
+            discover_button = gr.Button("🚀 Run Pattern Pipeline", variant="primary")
+
+            summary_output = gr.Markdown("Upload data and click run to see CCIA personas.")
+            personas_output = gr.JSON(label="Generated Personas")
+            cluster_plot = gr.Image(
+                label="Cluster Visualization",
+                type="filepath",
+                interactive=False,
+            )
+            stats_plot = gr.Image(
+                label="Pattern Statistics",
+                type="filepath",
+                interactive=False,
+            )
+
+            dataset_preset.change(
+                fn=_apply_dataset_preset,
+                inputs=dataset_preset,
+                outputs=[min_cluster_size, min_samples],
+            )
+
+            discover_button.click(
+                fn=run_pattern_discovery_full,
+                inputs=[
+                    csv_input,
+                    use_sample_csv,
+                    min_cluster_size,
+                    min_samples,
+                    use_llm_personas,
+                    llm_provider,
+                ],
+                outputs=[summary_output, personas_output, cluster_plot, stats_plot],
+            )
+
+        with gr.Tab("Activation Playbooks"):
+            gr.Markdown(
+                """
+                ### Layer 4 – Activation
+
+                Turn Layer 2 + Layer 3 insights into marketing actions. These playbooks map directly to the CCIA research article and highlight how to operationalize intent + pattern signals.
+                """
+            )
+            gr.Markdown(
+                f"[Layer 4: Activation Guidance]({ARTICLE_URL}) — scroll to the activation section of the article for the full strategy.",
+            )
+            with gr.Row():
+                gr.Markdown(
+                    """
+                    #### 🎯 Bid & Budget Modifiers
+                    - Tie `primary_intent` confidence to bid uplifts or suppressions.
+                    - Pair persona-level conversion probabilities with budget caps.
+                    - Export persona cohorts to ad platforms for intent-aware bidding.
+                    """,
+                    elem_id="activation-bids",
+                )
+                gr.Markdown(
+                    """
+                    #### 👥 Audience Segmentation
+                    - Promote resilient patterns (>30% stability) into always-on audiences.
+                    - Sync personas to CRM/CDP segments for cross-channel orchestration.
+                    - Monitor cluster drift weekly using the MCP pattern tool.
+                    """,
+                    elem_id="activation-audiences",
+                )
+            with gr.Row():
+                gr.Markdown(
+                    """
+                    #### 🧩 Content Personalization
+                    - Map behavioral evidence to modular creatives (guides, demos, offers).
+                    - Use constraint signals (budget/time/knowledge) to swap callouts.
+                    - Trigger onsite personalization via the same context payload surfaced above.
+                    """,
+                    elem_id="activation-content",
+                )
+                gr.Markdown(
+                    """
+                    #### 🔁 Next-Best Actions
+                    - Feed predicted next actions into marketing automation journeys.
+                    - Combine persona intents with channel preference (situational context) to choose push/email/ad cadence.
+                    - Record feedback loops: did the suggested action happen? retrain heuristics monthly.
+                    """,
+                    elem_id="activation-next",
+                )
+
         with gr.Tab("MCP & API Guide"):
-            gr.Markdown(API_MD)
+            gr.Markdown(
+                """
+                ### MCP + API Guide
+
+                Monitor and launch the standalone MCP servers used for Track 1 submissions. Each server exposes a Gradio MCP endpoint compatible with Cursor, Claude Desktop, and ChatGPT (OpenAI Apps).
+                """
+            )
+
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("#### Intent Recognition MCP (port 7860)")
+                    gr.Markdown(
+                        "- Script: `python tools/intent_recognition_mcp.py`\n"
+                        "- Tool name: `recognize_intent`\n"
+                        "- Endpoint: `http://localhost:7860/gradio_api/mcp/sse`"
+                    )
+                with gr.Column():
+                    gr.Markdown("#### Pattern Discovery MCP (port 7861)")
+                    gr.Markdown(
+                        "- Script: `python tools/pattern_discovery_mcp.py`\n"
+                        "- Tool name: `discover_behavioral_patterns`\n"
+                        "- Endpoint: `http://localhost:7861/gradio_api/mcp/sse`"
+                    )
+
+            gr.Markdown("#### Cursor / Claude Config Snippets")
+            config_tabs = gr.Tabs()
+            with config_tabs:
+                with gr.TabItem("Cursor JSON"):
+                    cursor_config = gr.Code(
+                        value="""
+{
+  "mcpServers": {
+    "intent-recognition": {
+      "url": "http://localhost:7860/gradio_api/mcp/sse"
+    },
+    "pattern-discovery": {
+      "url": "http://localhost:7861/gradio_api/mcp/sse"
+    }
+  }
+}
+""".strip(),
+                        language="json",
+                        interactive=False,
+                        label="cursor.json snippet",
+                    )
+                with gr.TabItem("Claude Desktop"):
+                    claude_config = gr.Code(
+                        value="""
+{
+  "mcpServers": {
+    "intent-recognition": {
+      "command": "python",
+      "args": ["tools/intent_recognition_mcp.py"],
+      "port": 7860
+    },
+    "pattern-discovery": {
+      "command": "python",
+      "args": ["tools/pattern_discovery_mcp.py"],
+      "port": 7861
+    }
+  }
+}
+""".strip(),
+                        language="json",
+                        interactive=False,
+                        label="claude_desktop_config.json snippet",
+                    )
+
+            gr.Markdown(
+                """
+                1. Start each MCP server (or click the buttons in your terminal session).
+                2. Paste the snippet into your IDE/assistant configuration.
+                3. Use the named tools (`recognize_intent`, `discover_behavioral_patterns`) directly inside Cursor, Claude Desktop, or ChatGPT (post-hackathon).
+                """
+            )
 
 
 if __name__ == "__main__":
