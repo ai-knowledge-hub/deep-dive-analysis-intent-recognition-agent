@@ -1,3 +1,21 @@
+---
+title: "Deep Dive Intent Recognition Agent"
+emoji: 🧠
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: 4
+app_file: app.py
+pinned: false
+license: apache-2.0
+python_version: "3.10"
+tags:
+  - marketing
+  - intent-recognition
+  - mcp
+  - gradio
+---
+
 # Context-Conditioned Intent Recognition for Digital Marketing
 
 ## Research Implementation & Hackathon Validation
