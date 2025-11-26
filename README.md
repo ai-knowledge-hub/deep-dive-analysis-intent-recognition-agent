@@ -150,8 +150,9 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 ### Option 1: Try the Live Demo (Fastest)
 
 Visit our deployed HuggingFace Space:
-- **Intent Recognition Tool**: [Your-Space-URL] (coming soon)
-- **Pattern Discovery Tool**: [Your-Space-URL] (coming soon)
+- **Unified Agent**: https://huggingface.co/spaces/Dessi/gradio-mcp-hack
+  - Includes both intent recognition + pattern discovery tabs
+  - “LLM Settings” accordion lets you paste your own Anthropic/OpenAI/OpenRouter key (stored only in your browser session)
 
 ### Option 2: Run Locally (5 minutes)
 
