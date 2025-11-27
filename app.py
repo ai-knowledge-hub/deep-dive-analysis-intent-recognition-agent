@@ -373,9 +373,6 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
         """
     )
 
-    if ENGINE_ERROR:
-        gr.Markdown(f"⚠️ **Engine not initialized:** {ENGINE_ERROR}")
-
     llm_state = gr.State(
         {
             "enabled": False,
@@ -400,7 +397,12 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
         with gr.Row():
             save_llm_btn = gr.Button("Apply LLM Settings", variant="primary")
             clear_llm_btn = gr.Button("Clear", variant="secondary")
-        llm_status = gr.Markdown("Using server/.env credentials.")
+        default_status = (
+            "Using server/.env credentials."
+            if ENGINE is not None
+            else "No server credentials detected. Enable custom mode and paste your API key below."
+        )
+        llm_status = gr.Markdown(default_status)
 
         save_llm_btn.click(
             fn=save_llm_settings,
