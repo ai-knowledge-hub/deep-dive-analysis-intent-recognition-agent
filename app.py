@@ -373,6 +373,12 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
         """
     )
 
+    if ENGINE is None:
+        gr.Markdown(
+            "ℹ️ **Bring your own API key:** Expand the LLM Settings panel below or set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY` in the Space secrets.",
+            elem_id="no-server-keys",
+        )
+
     llm_state = gr.State(
         {
             "enabled": False,
@@ -724,4 +730,7 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860))),
+    )
