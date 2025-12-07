@@ -188,6 +188,7 @@ cp .env.example .env
 #   - ANTHROPIC_API_KEY (+ optional ANTHROPIC_MODEL)
 #   - OPENAI_API_KEY (+ optional OPENAI_MODEL)
 #   - OPENROUTER_API_KEY + OPENROUTER_MODEL (e.g., x-ai/grok-4.1-fast) plus optional OPENROUTER_SITE_URL/NAME
+#   - Audience connectors: fill the GOOGLE_ADS_* and META_* credentials if you plan to sync audiences
 
 # Run the Intent Recognition MCP tool
 python tools/intent_recognition_mcp.py
@@ -273,8 +274,27 @@ Use the app to iterate quickly on prompt changes, demonstrate behavioral persona
 
 ### Tab 4 — Bid Optimizer & Audience Activation
 - The **Bid Optimizer** tab lets you simulate Layer 4 recommendations by either inferring intent via the engine or overriding it manually. Outputs include JSON for downstream APIs plus a markdown summary for stakeholders.
-- Google Ads audience exports use `config/activation/audiences.yaml`. Leave `dry_run: true` to preview hashed payloads locally; set it to `false` (and install the `google-ads` SDK) when you're ready to sync live Customer Match lists.
-- The `AudienceManager` orchestrates connectors (starting with Google Ads) so future channels (Meta, LinkedIn, Trade Desk) can be plugged in without changing the UI workflow.
+- Google Ads audience exports use `config/activation/audiences.yaml`. Leave `dry_run: true` to preview hashed payloads locally; set it to `false` (and install the [`google-ads`](https://pypi.org/project/google-ads/) SDK) when you're ready to sync live Customer Match lists.
+- Meta Custom Audiences share the same config file for non-secret defaults—dry-run mode hashes identifiers locally so you can validate payloads without hitting the Marketing API. Production sync requires the [`facebook-business`](https://pypi.org/project/facebook-business/) SDK.
+- All secrets (Google Ads developer token, OAuth client, Meta access token/app secret/account ID) now live in `.env`. Copy `.env.example`, set the `GOOGLE_ADS_*` and `META_*` variables, and the connectors will pick them up automatically. Batch sizes default to 1,000 for Google Ads and 5,000 for Meta (tunable via YAML).
+- Identifiers are automatically normalized and SHA-256 hashed (with optional salt) before leaving your machine. In dry-run mode you’ll see the first few hashes in the output so you can confirm the pipeline without transmitting PII.
+- The `AudienceManager` orchestrates connectors (Google Ads + Meta today, LinkedIn/Trade Desk soon). The **Sync Audience** button in the Bid Optimizer tab lets you paste identifiers (emails/IDs) and push them via Customer Match / Custom Audiences directly from the UI (dry-run by default).
+
+#### Layer 4 How-to Flow
+1. **Intent Analyzer:** Capture structured context and classify the user’s primary intent (required).  
+2. **Pattern Discovery (optional):** Upload session histories to cluster personas and gather LLM-generated descriptions you can reuse in the Bid Optimizer tab.  
+3. **Bid Optimizer:** Enter intent/persona metrics (or let the analyzer infer them), generate bid modifiers, and review pacing guidance.  
+4. **Sync Audience:** Paste hashed emails or IDs (or raw emails—hashing happens automatically), pick a channel (Google Ads or Meta), toggle dry-run if needed, and click **Sync Audience** to push cohorts downstream.
+
+```
+Context Builder → Intent Engine → Bid Optimizer
+     │                                  │
+     └────────────── Persona Data ──────┤
+                                        ↓
+                            AudienceManager (Google Ads / Meta)
+                                        ↓
+                              Customer Match / Custom Audiences
+```
 
 ---
 

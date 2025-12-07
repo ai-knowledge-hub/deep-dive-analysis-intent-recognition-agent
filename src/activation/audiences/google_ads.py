@@ -10,7 +10,7 @@ without external dependencies.
 from __future__ import annotations
 
 import hashlib
-import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -46,6 +46,14 @@ class GoogleAdsAudienceConnector(AudienceConnector):
         self.batch_size = int(self.config.get("batch_size", 1000))
         self.dry_run = dry_run if dry_run is not None else bool(self.config.get("dry_run", True))
         self.hashing_salt = self.config.get("hashing_salt", "")
+        self.credentials = {
+            "developer_token": os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN") or self.config.get("developer_token"),
+            "login_customer_id": os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID") or self.config.get("login_customer_id"),
+            "customer_id": os.getenv("GOOGLE_ADS_CUSTOMER_ID") or self.config.get("customer_id"),
+            "client_id": os.getenv("GOOGLE_ADS_CLIENT_ID") or self.config.get("client_id"),
+            "client_secret": os.getenv("GOOGLE_ADS_CLIENT_SECRET") or self.config.get("client_secret"),
+            "refresh_token": os.getenv("GOOGLE_ADS_REFRESH_TOKEN") or self.config.get("refresh_token"),
+        }
 
         if not self.dry_run and GoogleAdsClient is None:
             raise ActivationError(
@@ -54,23 +62,18 @@ class GoogleAdsAudienceConnector(AudienceConnector):
 
         self.client = None
         if not self.dry_run and GoogleAdsClient:
-            credentials = {
-                "developer_token": self.config.get("developer_token"),
-                "login_customer_id": self.config.get("login_customer_id"),
-                "client_id": self.config.get("client_id"),
-                "client_secret": self.config.get("client_secret"),
-                "refresh_token": self.config.get("refresh_token"),
-            }
-            if not all(credentials.values()):
-                raise ActivationError("Missing Google Ads OAuth credentials in config.")
+            if not all(self.credentials.values()):
+                raise ActivationError(
+                    "Missing Google Ads credentials. Set GOOGLE_ADS_* env vars or update config overrides."
+                )
             self.client = GoogleAdsClient.load_from_dict(
                 {
-                    "developer_token": credentials["developer_token"],
-                    "login_customer_id": credentials["login_customer_id"],
+                    "developer_token": self.credentials["developer_token"],
+                    "login_customer_id": self.credentials["login_customer_id"],
                     "use_proto_plus": True,
-                    "oauth2_client_id": credentials["client_id"],
-                    "oauth2_client_secret": credentials["client_secret"],
-                    "oauth2_refresh_token": credentials["refresh_token"],
+                    "oauth2_client_id": self.credentials["client_id"],
+                    "oauth2_client_secret": self.credentials["client_secret"],
+                    "oauth2_refresh_token": self.credentials["refresh_token"],
                 }
             )
 
@@ -148,7 +151,7 @@ class GoogleAdsAudienceConnector(AudienceConnector):
         crm_based = user_list.crm_based_user_list
         crm_based.upload_key_type = self.client.enums.CustomerMatchUploadKeyTypeEnum.CONTACT_INFO
         response = user_list_service.mutate_user_lists(
-            customer_id=self.config.get("customer_id"), operations=[user_list_operation]
+            customer_id=self.credentials.get("customer_id"), operations=[user_list_operation]
         )
         return response.results[0].resource_name
 
@@ -159,7 +162,7 @@ class GoogleAdsAudienceConnector(AudienceConnector):
         user_data_job.customer_match_user_list_metadata.user_list = user_list_resource
 
         create_response = offline_user_data_job_service.create_offline_user_data_job(
-            customer_id=self.config.get("customer_id"), job=user_data_job
+            customer_id=self.credentials.get("customer_id"), job=user_data_job
         )
         operations = []
         for hashed in batch:

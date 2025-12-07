@@ -11,6 +11,7 @@ from typing import Dict, Optional
 
 from ..base import ActivationContext, ActivationError, AudienceCohort, ActivationComponent
 from .google_ads import GoogleAdsAudienceConnector
+from .meta_ads import MetaAdsAudienceConnector
 
 
 class AudienceManager:
@@ -45,6 +46,7 @@ def default_audience_manager() -> AudienceManager:
     """Factory with the Google Ads connector registered."""
     manager = AudienceManager()
     manager.register(GoogleAdsAudienceConnector())
+    manager.register(MetaAdsAudienceConnector())
     return manager
 
 

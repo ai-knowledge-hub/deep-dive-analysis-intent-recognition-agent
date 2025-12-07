@@ -23,6 +23,9 @@ from src.activation import (
     IntentSignal,
     IntentAwareBidOptimizer,
     PersonaProfile,
+    AudienceCohort,
+    default_audience_manager,
+    ActivationError,
 )
 from src.intent import IntentRecognitionEngine, IntentTaxonomy, LLMProviderFactory
 from src.utils import ContextBuilder
@@ -40,6 +43,8 @@ ENGINE: Optional[IntentRecognitionEngine] = None
 TAXONOMY: Optional[IntentTaxonomy] = None
 BID_OPTIMIZER: Optional[IntentAwareBidOptimizer] = None
 BID_OPTIMIZER_ERROR: Optional[str] = None
+AUDIENCE_MANAGER = None
+AUDIENCE_MANAGER_ERROR: Optional[str] = None
 
 try:
     llm_provider = LLMProviderFactory.create_from_env()
@@ -58,6 +63,11 @@ if TAXONOMY is not None:
         BID_OPTIMIZER_ERROR = f"Unable to initialize bid optimizer: {exc}"
 else:
     BID_OPTIMIZER_ERROR = "Intent taxonomy not loaded; bid optimizer unavailable."
+
+try:
+    AUDIENCE_MANAGER = default_audience_manager()
+except Exception as exc:  # noqa: BLE001
+    AUDIENCE_MANAGER_ERROR = f"Audience connectors unavailable: {exc}"
 
 
 SAMPLE_CONTEXT_PATH = Path("data/sample_contexts.json")
@@ -243,6 +253,18 @@ def _build_persona_profile(
         intent_distribution={intent_label: 1.0},
         metrics=metrics,
     )
+
+
+def _parse_identifiers(raw_text: str) -> List[str]:
+    """Turn textarea input into distinct user identifiers."""
+    if not raw_text:
+        return []
+    tokens = []
+    for chunk in raw_text.replace("\n", ",").split(","):
+        cleaned = chunk.strip()
+        if cleaned:
+            tokens.append(cleaned)
+    return tokens
 
 
 def save_llm_settings(
@@ -460,18 +482,6 @@ def run_bid_optimizer_playbook(
         msg = BID_OPTIMIZER_ERROR or "Bid optimizer not initialized."
         return {"error": msg}, {"error": msg}, f"❌ {msg}"
 
-    context_view = CONTEXT_BUILDER.build_context(
-        user_query=user_query,
-        page_type=page_type,
-        previous_actions=previous_actions,
-        time_on_page=time_on_page,
-        session_history=session_history,
-        device_type=device_type,
-        traffic_source=traffic_source,
-        scroll_depth=scroll_depth,
-        clicks_count=clicks_count,
-    )
-
     intent_payload: Dict[str, Any]
     label: str
     confidence: float
@@ -564,6 +574,127 @@ def run_bid_optimizer_playbook(
     ]
 
     return intent_payload, recommendation_dict, "\n".join(summary_lines)
+
+
+def sync_audience_playbook(
+    audience_channel: str,
+    cohort_name: str,
+    cohort_description: str,
+    user_identifiers: str,
+    dry_run: bool,
+    use_manual_intent: bool,
+    manual_intent_label: str,
+    manual_confidence: float,
+    persona_name: str,
+    persona_description: str,
+    persona_size: float,
+    persona_share_percent: float,
+    persona_conversion_percent: float,
+    persona_ltv_index: float,
+    historical_cvr_percent: float,
+    recent_roas: float,
+    user_query: str,
+    page_type: str,
+    previous_actions: str,
+    time_on_page: int,
+    session_history: str,
+    device_type: str,
+    traffic_source: str,
+    scroll_depth: float,
+    clicks_count: int,
+    llm_settings: Optional[Dict[str, Any]],
+) -> Tuple[Any, str]:
+    """Sync provided cohort to selected channel using AudienceManager."""
+    if AUDIENCE_MANAGER is None:
+        msg = AUDIENCE_MANAGER_ERROR or "Audience manager not initialized."
+        return {"error": msg}, f"❌ {msg}"
+
+    identifiers = _parse_identifiers(user_identifiers)
+    if not identifiers:
+        return {"error": "No identifiers supplied."}, "❌ Provide email/customer IDs to sync."
+
+    if use_manual_intent:
+        label = manual_intent_label or "compare_options"
+        confidence = max(0.0, min(1.0, manual_confidence or 0.55))
+        evidence = ["Manual override"]
+        intent_payload = {
+            "primary_intent": label,
+            "confidence": confidence,
+            "source": "manual_override",
+        }
+    else:
+        engine, engine_error = _resolve_engine(llm_settings)
+        if engine is None:
+            error_msg = engine_error or "Intent engine not configured."
+            return {"error": error_msg}, f"❌ {error_msg}"
+        try:
+            intent_payload = engine.recognize_intent(
+                user_query=user_query,
+                page_type=page_type,
+                previous_actions=previous_actions,
+                time_on_page=time_on_page,
+                session_history=session_history,
+                device_type=device_type,
+                traffic_source=traffic_source,
+                scroll_depth=scroll_depth,
+                clicks_count=clicks_count,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}, f"❌ Intent analysis failed: {exc}"
+        label = intent_payload.get("primary_intent", manual_intent_label or "unknown")
+        confidence = float(intent_payload.get("confidence", manual_confidence or 0.55))
+        evidence = intent_payload.get("behavioral_evidence") or []
+
+    persona_profile = _build_persona_profile(
+        persona_name,
+        persona_description,
+        persona_size,
+        persona_share_percent,
+        persona_conversion_percent,
+        persona_ltv_index,
+        label,
+    )
+
+    metrics: Dict[str, float] = {}
+    hist_ratio = _percent_to_ratio(historical_cvr_percent)
+    if hist_ratio is not None:
+        metrics["historical_cvr"] = hist_ratio
+    if recent_roas:
+        metrics["recent_roas"] = recent_roas
+
+    context = ActivationContext(
+        intents=[
+            IntentSignal(
+                label=label,
+                confidence=max(0.0, min(1.0, confidence)),
+                stage=(TAXONOMY.get_intent_definition(label) or {}).get("stage") if TAXONOMY else None,
+                evidence=evidence,
+            )
+        ],
+        persona=persona_profile,
+        metrics=metrics or None,
+        metadata={"channel": audience_channel, "source": "bid_optimizer"},
+    )
+
+    cohort = AudienceCohort(
+        name=cohort_name or f"{label}-cohort",
+        description=cohort_description or f"Auto-synced from Bid Optimizer ({label})",
+        user_ids=identifiers,
+    )
+
+    try:
+        result = AUDIENCE_MANAGER.sync(audience_channel, cohort, context, dry_run=dry_run)
+    except ActivationError as exc:
+        return {"error": str(exc)}, f"❌ Audience sync failed: {exc}"
+
+    summary_lines = [
+        f"**Channel:** {audience_channel}",
+        f"**Cohort:** {cohort.name} ({result.get('user_count', len(identifiers))} users)",
+        f"**Status:** {result.get('status', 'unknown')}",
+        f"**Dry Run:** {result.get('dry_run', dry_run)}",
+    ]
+
+    return result, "\n".join(summary_lines)
 
 # ---------------------------------------------------------------------------
 # Gradio Interface
@@ -969,6 +1100,66 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     llm_state,
                 ],
                 outputs=[bid_intent_json, bid_recommendation_json, bid_summary],
+            )
+
+            gr.Markdown("#### Audience Activation")
+            with gr.Row():
+                audience_channel = gr.Dropdown(
+                    label="Sync Channel",
+                    choices=["google_ads", "meta_ads"],
+                    value="google_ads",
+                )
+                audience_dry_run = gr.Checkbox(
+                    label="Dry Run (hash only, no upload)",
+                    value=True,
+                )
+            cohort_name = gr.Textbox(label="Cohort Name", placeholder="High Intent Persona")
+            cohort_description = gr.Textbox(
+                label="Cohort Description",
+                placeholder="Custom audience synced from Bid Optimizer",
+            )
+            cohort_identifiers = gr.Textbox(
+                label="User Identifiers (emails or IDs)",
+                placeholder="user@example.com, second@example.com",
+                lines=3,
+            )
+
+            sync_button = gr.Button("Sync Audience", variant="secondary")
+            sync_json = gr.JSON(label="Audience Sync Result")
+            sync_summary = gr.Markdown("Provide identifiers and click sync to upload.")
+
+            sync_button.click(
+                fn=sync_audience_playbook,
+                inputs=[
+                    audience_channel,
+                    cohort_name,
+                    cohort_description,
+                    cohort_identifiers,
+                    audience_dry_run,
+                    use_manual_intent,
+                    manual_intent_label,
+                    manual_confidence,
+                    persona_name,
+                    persona_description,
+                    persona_size,
+                    persona_share,
+                    persona_conversion,
+                    persona_ltv,
+                    historical_cvr,
+                    recent_roas,
+                    channel_choice,
+                    bid_user_query,
+                    bid_page_type,
+                    bid_previous_actions,
+                    bid_time_on_page,
+                    bid_session_history,
+                    bid_device_type,
+                    bid_traffic_source,
+                    bid_scroll_depth,
+                    bid_clicks_count,
+                    llm_state,
+                ],
+                outputs=[sync_json, sync_summary],
             )
 
         with gr.Tab("MCP & API Guide"):

@@ -11,7 +11,7 @@ from src.activation import (
     AudienceCohort,
     IntentSignal,
 )
-from src.activation.audiences import AudienceManager, GoogleAdsAudienceConnector
+from src.activation.audiences import AudienceManager, GoogleAdsAudienceConnector, MetaAdsAudienceConnector
 
 
 def build_context() -> ActivationContext:
@@ -42,6 +42,7 @@ def test_google_ads_connector_dry_run():
 def test_audience_manager_register_and_sync():
     manager = AudienceManager()
     manager.register(GoogleAdsAudienceConnector(dry_run=True))
+    manager.register(MetaAdsAudienceConnector(dry_run=True))
 
     cohort = AudienceCohort(
         name="Manager Audience",
@@ -49,9 +50,13 @@ def test_audience_manager_register_and_sync():
         user_ids=["alpha@example.com", "beta@example.com", "gamma@example.com"],
     )
 
-    result = manager.sync("google_ads", cohort, build_context())
-    assert result["status"] == "simulated_upload"
-    assert result["batch_count"] == 1
+    google_result = manager.sync("google_ads", cohort, build_context())
+    assert google_result["status"] == "simulated_upload"
+    assert google_result["batch_count"] == 1
+
+    meta_result = manager.sync("meta_ads", cohort, build_context())
+    assert meta_result["status"] == "simulated_upload"
+    assert meta_result["batch_count"] == 1
 
 
 def test_audience_manager_missing_connector():
