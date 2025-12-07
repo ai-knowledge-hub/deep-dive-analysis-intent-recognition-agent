@@ -1,21 +1,3 @@
----
-title: "Deep Dive Intent Recognition Agent"
-emoji: 🧠
-colorFrom: indigo
-colorTo: purple
-sdk: gradio
-sdk_version: "5.50.0"
-app_file: app.py
-pinned: false
-license: apache-2.0
-python_version: "3.10"
-tags:
-  - marketing
-  - intent-recognition
-  - mcp
-  - gradio
----
-
 # Context-Conditioned Intent Recognition for Digital Marketing
 
 ## Research Implementation Overview
@@ -219,15 +201,16 @@ The Gradio UI runs on http://localhost:7860 and also exposes an MCP endpoint at 
 
 Use the app to iterate quickly on prompt changes, demonstrate behavioral personas to stakeholders, or export personas for campaign planning.
 
-### Tab 4 — Bid Optimizer & Audience Activation
-- The **Bid Optimizer** tab lets you simulate Layer 4 recommendations by either inferring intent via the engine or overriding it manually. Outputs include JSON for downstream APIs plus a markdown summary for stakeholders.
-- Google Ads audience exports use `config/activation/audiences.yaml`. Leave `dry_run: true` to preview hashed payloads locally; set it to `false` (and install the [`google-ads`](https://pypi.org/project/google-ads/) SDK) when you're ready to sync live Customer Match lists.
-- Meta Custom Audiences share the same config file for non-secret defaults—dry-run mode hashes identifiers locally so you can validate payloads without hitting the Marketing API. Production sync requires the [`facebook-business`](https://pypi.org/project/facebook-business/) SDK.
-- All secrets (Google Ads developer token, OAuth client, Meta access token/app secret/account ID) now live in `.env`. Copy `.env.example`, set the `GOOGLE_ADS_*` and `META_*` variables, and the connectors will pick them up automatically. Batch sizes default to 1,000 for Google Ads and 5,000 for Meta (tunable via YAML).
-- Identifiers are automatically normalized and SHA-256 hashed (with optional salt) before leaving your machine. In dry-run mode you’ll see the first few hashes in the output so you can confirm the pipeline without transmitting PII.
-- The `AudienceManager` orchestrates connectors (Google Ads + Meta today, LinkedIn/Trade Desk soon). The **Sync Audience** button in the Bid Optimizer tab lets you paste identifiers (emails/IDs) and push them via Customer Match / Custom Audiences directly from the UI (dry-run by default).
-- **Personalization & Creative configs** live in `config/activation/personalization.yaml` and `config/activation/creative.yaml`. Slots (hero banner, proof bar, etc.), offer rules, and creative brief prompts are all data-driven so you can update experiences without code.
-- `ActivationContext.metadata` now accepts structured hints such as `preferred_channels`, `available_assets`, `creative_history`, and arbitrary personalization snippets. The new modules read those keys to choose slots, offers, and creative briefs before any LLM call is made.
+### Tab 4 — Activation Playbooks
+- The **Bid Optimizer** panel simulates Layer 4 bidding recommendations by either inferring intent via the engine or overriding it manually. Outputs include JSON for downstream APIs plus a markdown summary for stakeholders.
+- The **Audience Sync** panel uses `config/activation/audiences.yaml` for Google Ads/Meta defaults. Leave `dry_run: true` to preview hashed payloads locally; set it to `false` (and install the [`google-ads`](https://pypi.org/project/google-ads/) or [`facebook-business`](https://pypi.org/project/facebook-business/) SDK) when you're ready to sync live Customer Match / Custom Audiences. Identifiers are normalized + SHA-256 hashed (optional salt) before leaving your machine.
+- The new **Personalization + Creative Playground** lets you choose channels, slot availability, constraint toggles, optional asset notes, and whether to use the LLM for creative briefs. The outputs show:
+  - Content slot payloads (slot, channel, copy variant, CTA) + offer suggestions
+  - Next-best recommendations (promotion, comparison, etc.)
+  - Triggered email playbooks (subject, delay, sequence)
+  - Creative brief sections driven by `config/activation/creative.yaml`
+- **Config knobs**: slot definitions/offers/channel rules live in `config/activation/personalization.yaml`; creative sections + asset preferences live in `config/activation/creative.yaml`. Adjust YAML to change available slots, default copy, offer heuristics, email steps, or brief prompts without touching code.
+- `ActivationContext.metadata` now accepts structured hints such as `preferred_channels`, `available_assets`, `creative_history`, and arbitrary personalization snippets. The Layer‑4 modules read those keys to choose slots, offers, recommendations, and creative briefs before any LLM call is made.
 
 #### Layer 4 How-to Flow
 1. **Intent Analyzer:** Capture structured context and classify the user’s primary intent (required).  
@@ -545,6 +528,90 @@ for persona in personas:
 
 **Try it**: `python tools/pattern_discovery_mcp.py` then upload `data/sample_user_histories.csv`
 
+### Example 5: Personalization + Creative Activation
+
+```python
+from src.activation import ActivationContext, IntentSignal, PersonaProfile, Layer4ActivationPlaybook
+
+intent = IntentSignal(label="ready_to_purchase", confidence=0.9, stage="decision")
+persona = PersonaProfile(
+    name="Urgent Deal Seekers",
+    description="High-intent users who need proof and urgency nudges.",
+    size=120,
+    share=0.25,
+    intent_distribution={"ready_to_purchase": 0.9},
+    metrics={"conversion_rate": 0.55, "ltv_index": 1.2},
+)
+
+activation_context = ActivationContext(
+    intents=[intent],
+    persona=persona,
+    metadata={
+        "channel": "web",
+        "preferred_channels": ["web", "email"],
+        "personalization_context": {
+            "available_slots": ["hero_banner", "proof_bar"],
+            "constraints": {"has_budget_constraint": True, "has_time_constraint": False},
+        },
+        "creative_options": {"mode": "template"},
+    },
+)
+
+playbook = Layer4ActivationPlaybook(include_bidding=False, use_llm_brief=False)
+result = playbook.run(activation_context)
+print(result.actions)
+```
+
+Sample JSON payload:
+
+```json
+{
+  "content_slots": [
+    {
+      "type": "content_slot",
+      "slot": "hero_banner",
+      "channel": "web",
+      "content": {
+        "headline": "Discover the perfect product",
+        "subcopy": "Let us help you decide with expert guidance.",
+        "cta": "view_offers",
+        "copy_variant": "value_benefits"
+      }
+    }
+  ],
+  "offers": [
+    {
+      "type": "offer",
+      "name": "high_intent",
+      "description": "Free express shipping and VIP support",
+      "mode": "monetary"
+    }
+  ],
+  "email_playbook": {
+    "type": "email_playbook",
+    "subject": "Finish your purchase today",
+    "delay_minutes": 30,
+    "steps": [
+      {"type": "reminder", "message": "Still interested? Lock in inventory now."},
+      {"type": "social_proof", "message": "Here's why similar shoppers loved it."}
+    ]
+  },
+  "creative_brief": {
+    "type": "creative_brief",
+    "sections": {
+      "objective": "Summarize the marketing objective for this persona and intent.",
+      "key_message": "Provide the single-minded message for the creative."
+    },
+    "asset_preferences": {
+      "headline_style": "direct",
+      "imagery": "product_closeup"
+    }
+  }
+}
+```
+
+Use the Gradio Activation tab or `tools/personalization_mcp.py` to generate similar payloads interactively.
+
 ---
 
 ## 🧪 Testing & Validation
@@ -631,6 +698,16 @@ For comprehensive testing instructions, see [TESTING.md](TESTING.md)
 - ✅ LLM-powered persona generation
 - ✅ Stability validation methodology
 - ✅ Visualization and export capabilities
+
+---
+
+## 🚧 Future Enhancements & Open Questions
+
+1. **Creative performance memory**: Should we persist creative results/metrics (e.g., CTR, CVR) in the activation layer, or continue accepting them as optional context via `creative_history` until we wire up a measurement store?
+2. **Multi-channel personalization orchestration**: The current YAML + UI handle web/app/email; do we prioritize additional channels (SMS, push, in-app messaging) or double down on onsite + email until activation feedback loops are live?
+3. **LLM guardrails for briefs**: LLM-powered creative briefs currently inherit global settings. What extra policies do we need (max tokens per section, brand-style prompts, toxicity filters) before enabling "LLM mode" in regulated environments?
+
+Have thoughts or want to help? Open an issue/discussion with proposed approaches.
 
 ---
 

@@ -569,6 +569,67 @@ Next Steps:
 4. Monitor performance after 24-48 hours
 ```
 
+#### Part C: Personalization & Creative Guidance
+
+**Purpose:** Translate intents/personas into onsite slots, recommendations, triggered email playbooks, and creative briefs so creative and lifecycle teams can execute quickly.
+
+**Controls Overview:**
+- **Persona & Metrics:** Name/description, size/share, conversion rate, LTV index, historical CVR, and recent ROAS feed the offer logic in `config/activation/personalization.yaml`.
+- **Channel & Slot Selection:** Choose a primary channel plus optional preferred channels (web/app/email). Check only the slots that exist on your page/app (hero banner, proof bar, etc.). These map to the YAML `channel_rules`.
+- **Constraints:** Toggle budget/time/knowledge signals to see copy overrides (e.g., fast shipping CTA when time pressure is true).
+- **Assets & History:** Paste JSON or free text describing `available_assets` (hero image IDs, promotional codes) and `creative_history` (past winners, compliance guardrails). Modules treat these as optional metadata.
+- **Creative Brief Mode:** Turn on “Use LLM for Creative Brief” to call your BYOK model; turn it off to stick with template-only prompts defined in `config/activation/creative.yaml`.
+
+**Outputs Explained:**
+- **Content Slots & Offers:** Each slot includes channel, copy variant, CTA, plus any constraint-driven overrides. Offers include type (monetary, percentage) and rationale.
+- **Recommendations:** Next-best action objects (e.g., comparison chart, limited-time promo).
+- **Email Playbook:** Subject, delay_minutes, and an ordered step list (reminder, proof, promotion, etc.) matching the YAML playbook for the detected intent.
+- **Creative Brief:** Section-by-section guidance (objective, audience insight, key message, proof points, tone, CTA) plus asset preferences (imagery/headline style).
+
+Sample payload:
+
+```json
+{
+  "content_slots": [
+    {
+      "type": "content_slot",
+      "slot": "hero_banner",
+      "channel": "web",
+      "content": {
+        "headline": "Discover the perfect product",
+        "subcopy": "Let us help you decide with expert guidance.",
+        "cta": "view_offers",
+        "copy_variant": "value_benefits"
+      }
+    }
+  ],
+  "offers": [
+    {"type": "offer", "name": "high_intent", "mode": "monetary", "description": "Free express shipping"}
+  ],
+  "recommendations": [
+    {"type": "recommendation", "category": "comparison", "label": "Side-by-side product chart"}
+  ],
+  "email_playbook": {
+    "subject": "Finish your purchase today",
+    "delay_minutes": 30,
+    "steps": [
+      {"type": "reminder", "message": "Still interested? Lock in inventory now."},
+      {"type": "social_proof", "message": "Here's why similar shoppers loved it."}
+    ]
+  },
+  "creative_brief": {
+    "intent": "ready_to_purchase",
+    "sections": {
+      "objective": "Summarize the marketing objective for this persona and intent.",
+      "key_message": "Provide the single-minded message for the creative."
+    },
+    "asset_preferences": {"headline_style": "direct", "imagery": "product_closeup"}
+  }
+}
+```
+
+Configure new slots/offers/email steps in `config/activation/personalization.yaml` and adjust creative sections/guardrails in `config/activation/creative.yaml`.
+
 ---
 
 ### Tab 4: MCP & API Guide — Integration Reference
