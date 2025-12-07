@@ -1,0 +1,45 @@
+defaults:
+  base_cpc: 1.50
+  base_conversion_rate: 0.02
+  min_conversion_rate: 0.005
+  max_conversion_rate: 0.90
+  neutral_confidence: 0.55
+  min_bid_modifier: -0.60
+  max_bid_modifier: 0.90
+  target_roas: 3.0
+
+conversion_model:
+  confidence_weight: 0.6
+  persona_weight: 0.25
+  historical_weight: 0.25
+  stage_multipliers:
+    awareness: 0.6
+    consideration: 0.9
+    decision: 1.2
+    post_purchase: 0.3
+
+bid_weights:
+  confidence: 0.4
+  persona_ltv: 0.3
+  historical_roas: 0.2
+  conversion_lift: 0.5
+
+pacing_thresholds:
+  accelerate: 0.55
+  maintain: 0.35
+
+channels:
+  google_ads:
+    defaults:
+      base_cpc: 1.8
+      max_bid_modifier: 1.2
+    bid_weights:
+      confidence: 0.45
+      conversion_lift: 0.55
+  meta_ads:
+    defaults:
+      base_cpc: 1.2
+      min_bid_modifier: -0.5
+    bid_weights:
+      persona_ltv: 0.35
+      historical_roas: 0.25

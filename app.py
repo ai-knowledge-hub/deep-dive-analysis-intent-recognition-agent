@@ -11,12 +11,19 @@ from __future__ import annotations
 import json
 import os
 from contextlib import contextmanager
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
 from dotenv import load_dotenv
 
+from src.activation import (
+    ActivationContext,
+    IntentSignal,
+    IntentAwareBidOptimizer,
+    PersonaProfile,
+)
 from src.intent import IntentRecognitionEngine, IntentTaxonomy, LLMProviderFactory
 from src.utils import ContextBuilder
 from tools.pattern_discovery_mcp import discover_behavioral_patterns
@@ -31,6 +38,8 @@ load_dotenv()
 ENGINE_ERROR: Optional[str] = None
 ENGINE: Optional[IntentRecognitionEngine] = None
 TAXONOMY: Optional[IntentTaxonomy] = None
+BID_OPTIMIZER: Optional[IntentAwareBidOptimizer] = None
+BID_OPTIMIZER_ERROR: Optional[str] = None
 
 try:
     llm_provider = LLMProviderFactory.create_from_env()
@@ -41,6 +50,14 @@ except Exception as exc:  # noqa: BLE001 - surface config errors to UI
         "Unable to initialize the Intent Recognition Engine.\n\n" \
         f"Details: {exc}\n\nSet ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in your environment."
     )
+
+if TAXONOMY is not None:
+    try:
+        BID_OPTIMIZER = IntentAwareBidOptimizer(taxonomy=TAXONOMY)
+    except Exception as exc:
+        BID_OPTIMIZER_ERROR = f"Unable to initialize bid optimizer: {exc}"
+else:
+    BID_OPTIMIZER_ERROR = "Intent taxonomy not loaded; bid optimizer unavailable."
 
 
 SAMPLE_CONTEXT_PATH = Path("data/sample_contexts.json")
@@ -175,6 +192,57 @@ def _temporary_llm_env(llm_settings: Optional[Dict[str, Any]]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _resolve_llm_provider_choice(llm_settings: Optional[Dict[str, Any]]) -> str:
+    """Choose which provider to route persona generation through."""
+    settings = _normalize_settings(llm_settings)
+    if settings["enabled"] and settings["provider"]:
+        return settings["provider"]
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("OPENROUTER_API_KEY"):
+        return "openrouter"
+    return settings.get("provider", "openrouter")
+
+
+def _percent_to_ratio(value: Optional[float]) -> Optional[float]:
+    """Convert 0-100 slider values to 0-1 ratios."""
+    if value is None:
+        return None
+    return max(0.0, min(1.0, value / 100.0))
+
+
+def _build_persona_profile(
+    name: str,
+    description: str,
+    size: float,
+    share_percent: float,
+    conversion_rate_percent: Optional[float],
+    ltv_index: Optional[float],
+    intent_label: str,
+) -> Optional[PersonaProfile]:
+    """Build persona profile for bid optimizer inputs."""
+    if not name and not description and not conversion_rate_percent and not ltv_index:
+        return None
+
+    metrics: Dict[str, float] = {}
+    ratio_cvr = _percent_to_ratio(conversion_rate_percent)
+    if ratio_cvr is not None:
+        metrics["conversion_rate"] = ratio_cvr
+    if ltv_index is not None and ltv_index > 0:
+        metrics["ltv_index"] = ltv_index
+
+    return PersonaProfile(
+        name=name or "Activation Persona",
+        description=description or f"Persona derived from {intent_label}",
+        size=int(size or 0),
+        share=_percent_to_ratio(share_percent) or 0.0,
+        intent_distribution={intent_label: 1.0},
+        metrics=metrics,
+    )
 
 
 def save_llm_settings(
@@ -324,7 +392,6 @@ def run_pattern_discovery_full(
     min_cluster_size: int,
     min_samples: int,
     use_llm_personas: bool,
-    llm_provider: str,
     llm_settings: Optional[Dict[str, Any]],
 ) -> Tuple[str, Any, Optional[str], Optional[str]]:
     """
@@ -342,6 +409,8 @@ def run_pattern_discovery_full(
             None,
         )
 
+    provider_choice = _resolve_llm_provider_choice(llm_settings)
+
     try:
         with _temporary_llm_env(llm_settings):
             summary, personas_json, cluster_plot, stats_plot = discover_behavioral_patterns(
@@ -349,7 +418,7 @@ def run_pattern_discovery_full(
                 min_cluster_size=min_cluster_size,
                 min_samples=min_samples,
                 use_llm_personas=use_llm_personas,
-                llm_provider=llm_provider,
+                llm_provider=provider_choice,
             )
     except Exception as exc:  # noqa: BLE001
         return (f"❌ Pattern discovery failed:\n\n{exc}", [], None, None)
@@ -360,6 +429,141 @@ def run_pattern_discovery_full(
         personas_obj = {"raw": personas_json or "[]"}
 
     return summary, personas_obj, (cluster_plot or None), (stats_plot or None)
+
+
+def run_bid_optimizer_playbook(
+    use_manual_intent: bool,
+    manual_intent_label: str,
+    manual_confidence: float,
+    persona_name: str,
+    persona_description: str,
+    persona_size: float,
+    persona_share_percent: float,
+    persona_conversion_percent: float,
+    persona_ltv_index: float,
+    historical_cvr_percent: float,
+    recent_roas: float,
+    channel_choice: str,
+    user_query: str,
+    page_type: str,
+    previous_actions: str,
+    time_on_page: int,
+    session_history: str,
+    device_type: str,
+    traffic_source: str,
+    scroll_depth: float,
+    clicks_count: int,
+    llm_settings: Optional[Dict[str, Any]],
+) -> Tuple[Any, Any, str]:
+    """Run bid optimizer by either inferring intent via LLM or using manual override."""
+    if BID_OPTIMIZER is None:
+        msg = BID_OPTIMIZER_ERROR or "Bid optimizer not initialized."
+        return {"error": msg}, {"error": msg}, f"❌ {msg}"
+
+    context_view = CONTEXT_BUILDER.build_context(
+        user_query=user_query,
+        page_type=page_type,
+        previous_actions=previous_actions,
+        time_on_page=time_on_page,
+        session_history=session_history,
+        device_type=device_type,
+        traffic_source=traffic_source,
+        scroll_depth=scroll_depth,
+        clicks_count=clicks_count,
+    )
+
+    intent_payload: Dict[str, Any]
+    label: str
+    confidence: float
+    evidence: List[str]
+
+    if use_manual_intent:
+        label = manual_intent_label or "compare_options"
+        confidence = max(0.0, min(1.0, manual_confidence or 0.55))
+        evidence = ["Manual override"]
+        intent_payload = {
+            "primary_intent": label,
+            "confidence": confidence,
+            "source": "manual_override",
+        }
+    else:
+        engine, engine_error = _resolve_engine(llm_settings)
+        if engine is None:
+            error_msg = engine_error or "Intent engine not configured."
+            return {"error": error_msg}, {"error": error_msg}, f"❌ {error_msg}"
+        try:
+            intent_payload = engine.recognize_intent(
+                user_query=user_query,
+                page_type=page_type,
+                previous_actions=previous_actions,
+                time_on_page=time_on_page,
+                session_history=session_history,
+                device_type=device_type,
+                traffic_source=traffic_source,
+                scroll_depth=scroll_depth,
+                clicks_count=clicks_count,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return (
+                {"error": str(exc)},
+                {"error": str(exc)},
+                f"❌ Intent analysis failed: {exc}",
+            )
+        label = intent_payload.get("primary_intent", manual_intent_label or "unknown")
+        confidence = float(intent_payload.get("confidence", manual_confidence or 0.55))
+        evidence = intent_payload.get("behavioral_evidence") or []
+
+    intent_def = TAXONOMY.get_intent_definition(label) if TAXONOMY else {}
+    stage = intent_def.get("stage") if intent_def else None
+
+    intent_signal = IntentSignal(
+        label=label,
+        confidence=max(0.0, min(1.0, confidence)),
+        stage=stage,
+        evidence=evidence,
+        metadata={"source": intent_payload.get("source", "engine")},
+    )
+
+    persona_profile = _build_persona_profile(
+        persona_name,
+        persona_description,
+        persona_size,
+        persona_share_percent,
+        persona_conversion_percent,
+        persona_ltv_index,
+        intent_signal.label,
+    )
+
+    metrics: Dict[str, float] = {}
+    hist_ratio = _percent_to_ratio(historical_cvr_percent)
+    if hist_ratio is not None:
+        metrics["historical_cvr"] = hist_ratio
+    if recent_roas:
+        metrics["recent_roas"] = recent_roas
+
+    activation_context = ActivationContext(
+        intents=[intent_signal],
+        persona=persona_profile,
+        metrics=metrics or None,
+        metadata={
+            "channel": channel_choice or "default",
+            "context_preview": context_view,
+        },
+    )
+
+    recommendation = BID_OPTIMIZER.recommend(activation_context)
+    recommendation_dict = asdict(recommendation)
+
+    summary_lines = [
+        f"**Channel:** {channel_choice or 'default'}",
+        f"**Intent Used:** {label.replace('_', ' ').title()} ({intent_signal.confidence:.0%})",
+        f"**Bid Modifier:** {recommendation.bid_modifier:+.0%}",
+        f"**Adjusted Bid:** ${recommendation.base_bid or 0:.2f}",
+        f"**Pacing Guidance:** {recommendation.metadata.get('pacing', 'monitor')}",
+        f"**Conversion Probability:** {recommendation.metadata.get('conversion_probability', 0.0):.0%}",
+    ]
+
+    return intent_payload, recommendation_dict, "\n".join(summary_lines)
 
 # ---------------------------------------------------------------------------
 # Gradio Interface
@@ -560,11 +764,6 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                 value=True,
                 info="Requires ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.",
             )
-            llm_provider = gr.Radio(
-                label="LLM Provider",
-                choices=["anthropic", "openai", "openrouter"],
-                value="anthropic",
-            )
 
             discover_button = gr.Button("🚀 Run Pattern Pipeline", variant="primary")
 
@@ -595,7 +794,6 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     min_cluster_size,
                     min_samples,
                     use_llm_personas,
-                    llm_provider,
                     llm_state,
                 ],
                 outputs=[summary_output, personas_output, cluster_plot, stats_plot],
@@ -651,6 +849,128 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     elem_id="activation-next",
                 )
 
+        with gr.Tab("Bid Optimizer"):
+            intent_choices = TAXONOMY.get_all_intent_labels() if TAXONOMY else []
+            gr.Markdown(
+                """
+                ### Bid Optimizer Playground
+
+                Run the Layer 4 optimizer to turn intents + personas into bid recommendations. Auto-detect intent with the engine or manually enter it for deterministic testing.
+                """
+            )
+            channel_choice = gr.Dropdown(
+                label="Channel",
+                choices=["default", "google_ads", "meta_ads"],
+                value="google_ads",
+            )
+            use_manual_intent = gr.Checkbox(
+                label="Manual Intent Override",
+                value=ENGINE is None,
+                info="Enable if you want to skip the LLM and enter intent + confidence yourself.",
+            )
+            manual_intent_label = gr.Dropdown(
+                label="Intent Label",
+                choices=intent_choices,
+                value=intent_choices[0] if intent_choices else "ready_to_purchase",
+            )
+            manual_confidence = gr.Slider(
+                label="Intent Confidence (Manual Mode)",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.01,
+                value=0.75,
+            )
+
+            gr.Markdown("#### Persona & Historical Signals")
+            persona_name = gr.Textbox(label="Persona Name", placeholder="Research-Driven Comparers")
+            persona_description = gr.Textbox(
+                label="Persona Description",
+                placeholder="Concise description used in creative + activation briefs.",
+            )
+            with gr.Row():
+                persona_size = gr.Number(label="Persona Size (# users)", value=50)
+                persona_share = gr.Slider(label="Persona Share (%)", minimum=0, maximum=100, step=1, value=15)
+            with gr.Row():
+                persona_conversion = gr.Slider(
+                    label="Persona Conversion Rate (%)", minimum=0, maximum=100, step=1, value=48
+                )
+                persona_ltv = gr.Number(label="Persona LTV Index (1.0 = avg)", value=1.2)
+            with gr.Row():
+                historical_cvr = gr.Slider(
+                    label="Historical Campaign CVR (%)", minimum=0, maximum=100, step=1, value=35
+                )
+                recent_roas = gr.Number(label="Recent ROAS", value=3.2)
+
+            gr.Markdown("#### Context Inputs (mirrors Intent Analyzer)")
+            bid_user_query = gr.Textbox(label="User Query", placeholder="nike pegasus discount code")
+            bid_page_type = gr.Dropdown(
+                label="Page Type",
+                choices=[
+                    "product_detail",
+                    "category",
+                    "search_results",
+                    "cart",
+                    "checkout",
+                    "homepage",
+                    "blog_post",
+                    "comparison_page",
+                ],
+                value="product_detail",
+            )
+            bid_previous_actions = gr.Textbox(
+                label="Previous Actions", placeholder="viewed_product,read_reviews,checked_shipping"
+            )
+            bid_time_on_page = gr.Slider(label="Time on Page (seconds)", minimum=0, maximum=600, step=5, value=180)
+            bid_session_history = gr.Textbox(
+                label="Session History JSON",
+                placeholder='[{"intent": "compare_options", "timestamp": "2025-01-02T12:00:00"}]',
+                lines=3,
+            )
+            with gr.Row():
+                bid_device_type = gr.Dropdown(label="Device", choices=["desktop", "mobile", "tablet"], value="desktop")
+                bid_traffic_source = gr.Dropdown(
+                    label="Traffic Source",
+                    choices=["direct", "search_google", "social_meta", "email", "affiliate"],
+                    value="search_google",
+                )
+            with gr.Row():
+                bid_scroll_depth = gr.Slider(label="Scroll Depth (%)", minimum=0, maximum=100, step=5, value=70)
+                bid_clicks_count = gr.Slider(label="Clicks This Session", minimum=0, maximum=20, step=1, value=5)
+
+            bid_button = gr.Button("Compute Bid Recommendation", variant="primary")
+            bid_intent_json = gr.JSON(label="Intent Input Preview")
+            bid_recommendation_json = gr.JSON(label="Bid Recommendation JSON")
+            bid_summary = gr.Markdown("Run the optimizer to view guidance.")
+
+            bid_button.click(
+                fn=run_bid_optimizer_playbook,
+                inputs=[
+                    use_manual_intent,
+                    manual_intent_label,
+                    manual_confidence,
+                    persona_name,
+                    persona_description,
+                    persona_size,
+                    persona_share,
+                    persona_conversion,
+                    persona_ltv,
+                    historical_cvr,
+                    recent_roas,
+                    channel_choice,
+                    bid_user_query,
+                    bid_page_type,
+                    bid_previous_actions,
+                    bid_time_on_page,
+                    bid_session_history,
+                    bid_device_type,
+                    bid_traffic_source,
+                    bid_scroll_depth,
+                    bid_clicks_count,
+                    llm_state,
+                ],
+                outputs=[bid_intent_json, bid_recommendation_json, bid_summary],
+            )
+
         with gr.Tab("MCP & API Guide"):
             gr.Markdown(
                 """
@@ -675,6 +995,13 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                         "- Tool name: `discover_behavioral_patterns`\n"
                         "- Endpoint: `http://localhost:7861/gradio_api/mcp/sse`"
                     )
+                with gr.Column():
+                    gr.Markdown("#### Bid Optimizer MCP (port 7862)")
+                    gr.Markdown(
+                        "- Script: `python tools/bid_optimizer_mcp.py`\n"
+                        "- Tool name: `optimize_bid`\n"
+                        "- Endpoint: `http://localhost:7862/gradio_api/mcp/sse`"
+                    )
 
             gr.Markdown("#### Cursor / Claude Config Snippets")
             config_tabs = gr.Tabs()
@@ -689,6 +1016,9 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
     },
     "pattern-discovery": {
       "url": "http://localhost:7861/gradio_api/mcp/sse"
+    },
+    "bid-optimizer": {
+      "url": "http://localhost:7862/gradio_api/mcp/sse"
     }
   }
 }
@@ -711,6 +1041,11 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
       "command": "python",
       "args": ["tools/pattern_discovery_mcp.py"],
       "port": 7861
+    },
+    "bid-optimizer": {
+      "command": "python",
+      "args": ["tools/bid_optimizer_mcp.py"],
+      "port": 7862
     }
   }
 }
