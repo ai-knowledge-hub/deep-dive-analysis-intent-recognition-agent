@@ -120,13 +120,22 @@ class IntentTaxonomy:
         """Get recommended bid modifier for an intent."""
         actions = self.recommended_actions.get(intent_label, [])
         if isinstance(actions, list):
-            # Find bid_modifier in list
             for action in actions:
                 if isinstance(action, str) and "bid_modifier" in action:
                     try:
                         return float(action.split(":")[-1].strip())
                     except ValueError:
-                        pass
+                        continue
+                if isinstance(action, dict) and "bid_modifier" in action:
+                    try:
+                        return float(action["bid_modifier"])
+                    except (TypeError, ValueError):
+                        continue
+        elif isinstance(actions, dict) and "bid_modifier" in actions:
+            try:
+                return float(actions["bid_modifier"])
+            except (TypeError, ValueError):
+                return 0.0
         return 0.0
 
     def get_likely_next_intents(self, current_intent: str) -> List[tuple[str, float]]:

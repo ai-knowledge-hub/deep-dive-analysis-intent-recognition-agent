@@ -1,3 +1,21 @@
+---
+title: "Deep Dive Intent Recognition Agent"
+emoji: 🧠
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: "5.50.0"
+app_file: app.py
+pinned: false
+license: apache-2.0
+python_version: "3.10"
+tags:
+  - marketing
+  - intent-recognition
+  - mcp
+  - gradio
+---
+
 # Context-Conditioned Intent Recognition for Digital Marketing
 
 ## Research Implementation & Hackathon Validation
@@ -170,6 +188,7 @@ cp .env.example .env
 #   - ANTHROPIC_API_KEY (+ optional ANTHROPIC_MODEL)
 #   - OPENAI_API_KEY (+ optional OPENAI_MODEL)
 #   - OPENROUTER_API_KEY + OPENROUTER_MODEL (e.g., x-ai/grok-4.1-fast) plus optional OPENROUTER_SITE_URL/NAME
+#   - Audience connectors: fill the GOOGLE_ADS_* and META_* credentials if you plan to sync audiences
 
 # Run the Intent Recognition MCP tool
 python tools/intent_recognition_mcp.py
@@ -178,6 +197,14 @@ python tools/intent_recognition_mcp.py
 # OR run the Pattern Discovery MCP tool
 python tools/pattern_discovery_mcp.py
 # Open browser to http://localhost:7861
+
+# OR run the Bid Optimizer MCP tool
+python tools/bid_optimizer_mcp.py
+# Open browser to http://localhost:7862
+
+# Optional: configure Google Ads audience exports
+cp config/activation/audiences.yaml config/activation/audiences.local.yaml
+# Fill in developer_token, login_customer_id, customer_id, client/OAuth creds, then run
 ```
 
 ### Option 3: Use as MCP Server
@@ -220,21 +247,6 @@ python tools/pattern_discovery_mcp.py
 
 ---
 
-## 🚀 Current Status
-
-### ✅ Completed
-- Core intent recognition engine + five-dimensional context capture
-- Multi-provider LLM abstraction (Anthropic, OpenAI, OpenRouter)
-- Intent taxonomy + Gradio MCP tool (Track 1)
-- Pattern discovery pipeline (`src/patterns/discovery.py`) + Gradio Pattern tab
-- Tests for engine and discovery modules
-
-### 🔄 In Progress
-- Track 2 autonomous marketing agent + bid optimizer
-- Hugging Face Space deployment + demo video
-
----
-
 ## 🧭 User Manual
 
 ### Launching the App
@@ -259,6 +271,30 @@ The Gradio UI runs on http://localhost:7860 and also exposes an MCP endpoint at 
 - Shows the local MCP URL, configuration snippets for Cursor/Claude Desktop/ChatGPT, and deployment notes for Hugging Face Spaces + OpenRouter leaderboard headers.
 
 Use the app to iterate quickly on prompt changes, demonstrate behavioral personas to stakeholders, or export personas for campaign planning.
+
+### Tab 4 — Bid Optimizer & Audience Activation
+- The **Bid Optimizer** tab lets you simulate Layer 4 recommendations by either inferring intent via the engine or overriding it manually. Outputs include JSON for downstream APIs plus a markdown summary for stakeholders.
+- Google Ads audience exports use `config/activation/audiences.yaml`. Leave `dry_run: true` to preview hashed payloads locally; set it to `false` (and install the [`google-ads`](https://pypi.org/project/google-ads/) SDK) when you're ready to sync live Customer Match lists.
+- Meta Custom Audiences share the same config file for non-secret defaults—dry-run mode hashes identifiers locally so you can validate payloads without hitting the Marketing API. Production sync requires the [`facebook-business`](https://pypi.org/project/facebook-business/) SDK.
+- All secrets (Google Ads developer token, OAuth client, Meta access token/app secret/account ID) now live in `.env`. Copy `.env.example`, set the `GOOGLE_ADS_*` and `META_*` variables, and the connectors will pick them up automatically. Batch sizes default to 1,000 for Google Ads and 5,000 for Meta (tunable via YAML).
+- Identifiers are automatically normalized and SHA-256 hashed (with optional salt) before leaving your machine. In dry-run mode you’ll see the first few hashes in the output so you can confirm the pipeline without transmitting PII.
+- The `AudienceManager` orchestrates connectors (Google Ads + Meta today, LinkedIn/Trade Desk soon). The **Sync Audience** button in the Bid Optimizer tab lets you paste identifiers (emails/IDs) and push them via Customer Match / Custom Audiences directly from the UI (dry-run by default).
+
+#### Layer 4 How-to Flow
+1. **Intent Analyzer:** Capture structured context and classify the user’s primary intent (required).  
+2. **Pattern Discovery (optional):** Upload session histories to cluster personas and gather LLM-generated descriptions you can reuse in the Bid Optimizer tab.  
+3. **Bid Optimizer:** Enter intent/persona metrics (or let the analyzer infer them), generate bid modifiers, and review pacing guidance.  
+4. **Sync Audience:** Paste hashed emails or IDs (or raw emails—hashing happens automatically), pick a channel (Google Ads or Meta), toggle dry-run if needed, and click **Sync Audience** to push cohorts downstream.
+
+```
+Context Builder → Intent Engine → Bid Optimizer
+     │                                  │
+     └────────────── Persona Data ──────┤
+                                        ↓
+                            AudienceManager (Google Ads / Meta)
+                                        ↓
+                              Customer Match / Custom Audiences
+```
 
 ---
 
@@ -381,9 +417,11 @@ intent-recognition-agent/
 │   │   ├── analyzer.py                # LLM persona generation
 │   │   └── visualizer.py              # Cluster visualizations
 │   │
-│   ├── activation/                    # Layer 4: Marketing Activation (planned)
-│   │   ├── bid_optimizer.py           # Bid modifier calculations
-│   │   └── audience_builder.py        # Segment creation
+│   ├── activation/                    # Layer 4: Marketing Activation
+│   │   ├── bidding/                   # Bid optimizer + conversion model ✅
+│   │   ├── audiences/                 # Audience activation (Google Ads ✅)
+│   │   ├── personalization/           # Personalization hooks (planned)
+│   │   └── creative/                  # Creative guidance (planned)
 │   │
 │   └── utils/                         # Layer 1: Context Capture
 │       ├── context_builder.py         # Five-dimensional context
@@ -392,7 +430,7 @@ intent-recognition-agent/
 ├── tools/                             # MCP Tools (Track 1)
 │   ├── intent_recognition_mcp.py      # Intent recognition tool ✅
 │   ├── pattern_discovery_mcp.py       # Pattern discovery tool ✅
-│   └── bid_optimizer_mcp.py           # Bid optimization (planned)
+│   └── bid_optimizer_mcp.py           # Bid optimization ✅
 │
 ├── app.py                             # Full Agent (Track 2 - planned)
 │
@@ -411,6 +449,8 @@ intent-recognition-agent/
 ├── tests/                             # Test suite
 │   ├── test_intent_engine.py          # Engine tests ✅
 │   ├── test_pattern_discovery_integration.py # Pattern discovery tests ✅
+│   ├── test_bid_optimizer.py          # Bid optimizer tests ✅
+│   ├── test_audience_manager.py       # Google Ads connector tests ✅
 │   ├── test_context_builder.py        # Context tests (planned)
 │   └── test_integration.py            # End-to-end tests (planned)
 │
@@ -685,9 +725,10 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 **What We're Submitting**:
 - ✅ Intent Recognition MCP Server ([tools/intent_recognition_mcp.py](tools/intent_recognition_mcp.py))
 - ✅ Pattern Discovery MCP Server ([tools/pattern_discovery_mcp.py](tools/pattern_discovery_mcp.py))
+- ✅ Bid Optimizer MCP Server ([tools/bid_optimizer_mcp.py](tools/bid_optimizer_mcp.py))
 - Works standalone in Cursor, Claude Desktop, ChatGPT
 - Solves real business problem ($500B digital marketing market)
-- Complete Layer 2 & Layer 3 from research article
+- Complete Layers 2-4 (bid strategy beta) from research article
 
 ### Track 2: MCP in Action
 

@@ -1,0 +1,9 @@
+google_ads:
+  batch_size: 1000
+  dry_run: true
+  hashing_salt: ""
+
+meta_ads:
+  batch_size: 5000
+  dry_run: true
+  hashing_salt: ""
