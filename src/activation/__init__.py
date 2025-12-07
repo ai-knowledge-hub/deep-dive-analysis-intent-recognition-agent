@@ -28,6 +28,13 @@ from .audiences import (
     AudienceManager,
     default_audience_manager,
 )
+from .personalization import (
+    ContentPersonalizationEngine,
+    RecommendationSelector,
+    TriggeredEmailPlanner,
+)
+from .creative import CreativeBriefGenerator
+from .playbooks import Layer4ActivationPlaybook
 
 __all__ = [
     "ActivationComponent",
@@ -47,4 +54,9 @@ __all__ = [
     "GoogleAdsAudienceConnector",
     "AudienceManager",
     "default_audience_manager",
+    "ContentPersonalizationEngine",
+    "RecommendationSelector",
+    "TriggeredEmailPlanner",
+    "CreativeBriefGenerator",
+    "Layer4ActivationPlaybook",
 ]

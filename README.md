@@ -18,13 +18,12 @@ tags:
 
 # Context-Conditioned Intent Recognition for Digital Marketing
 
-## Research Implementation & Hackathon Validation
+## Research Implementation Overview
 
-[![HF MCP Hackathon](https://img.shields.io/badge/HF_MCP-Hackathon-orange)](https://huggingface.co/MCP-1st-Birthday)
 [![Deep Dive Article](https://img.shields.io/badge/Research-Paper-blue)](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
 
 
-> **Translating research into production:** This repository implements the **Context-Conditioned Intent Activation (CCIA)** hypothesis from our article "[The Geometry of Intention: How LLMs Recognize Human Goals in Marketing](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)". We're validating the approach through the HuggingFace MCP Hackathon to gather real-world feedback and demonstrate practical applications.
+> **Translating research into production:** This repository implements the **Context-Conditioned Intent Activation (CCIA)** hypothesis from our article "[The Geometry of Intention: How LLMs Recognize Human Goals in Marketing](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)" and packages it as a practical marketing intelligence stack.
 
 ---
 
@@ -51,50 +50,6 @@ This implementation is based on convergent findings from four scientific discipl
 - Scientific Reports 2025: LLM + knowledge graphs for intention recognition
 
 **Full Article**: [The Geometry of Intention](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
-
----
-
-## 🏆 Hackathon Strategy
-
-### Why This Approach?
-
-We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
-
-1. **Rapid User Testing**: Deploy to HuggingFace Spaces → Get real feedback from marketing teams
-2. **Technical Validation**: Prove MCP protocol works across platforms (Cursor, Claude Desktop, ChatGPT)
-3. **Community Feedback**: Iterate based on actual usage patterns
-4. **Production Pathway**: Simplified architecture for hackathon → Full enterprise system post-validation
-
-### Dual Track Submission
-
-**Track 1: Building MCP (Enterprise)**
-- ✅ Standalone intent recognition tool
-- ✅ Pattern discovery tool
-- Bid optimization tool (planned)
-
-**Track 2: MCP in Action (Enterprise)**
-- Full marketing intelligence agent
-- Autonomous campaign analysis
-- Multi-tool orchestration
-
-### Post-Hackathon Roadmap
-
-**Phase 1: OpenAI Apps SDK Integration** 
-- Same MCP foundation → Works in ChatGPT
-- Reach 800M+ weekly ChatGPT users
-- Widget-based visualizations
-- OAuth authentication for production
-
-**Phase 2: Enterprise Production** 
-- PostgreSQL + Redis (replace SQLite + in-memory)
-- Kubernetes deployment
-- Multi-channel context capture
-- Real-time audience activation
-
-**Phase 3: Research Publication** 
-- Publish findings from real-world deployment
-- Share anonymized performance metrics
-- Open-source refined methodology
 
 ---
 
@@ -147,14 +102,13 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 
 ### Technology Stack
 
-**Hackathon Version** (Current):
+**Current Build**:
 - **Gradio 6+**: UI + MCP server
-- **Claude Sonnet 4**: Intent classification (using Anthropic hackathon credits)
+- **Anthropic/OpenAI/OpenRouter**: Intent classification (BYOK)
 - **SQLite**: Simplified storage
 - **In-memory cache**: Response caching
-- **HuggingFace Spaces**: Free deployment
 
-**Production Version** (Post-Hackathon):
+**Enterprise Roadmap**:
 - **FastAPI**: Production API
 - **PostgreSQL + Redis**: Scalable storage + caching
 - **Kubernetes**: Container orchestration
@@ -165,14 +119,7 @@ We're using the **Gradio x Anthropic MCP Hackathon** as a validation mechanism:
 
 ## 🚀 Quick Start
 
-### Option 1: Try the Live Demo (Fastest)
-
-Visit our deployed HuggingFace Space:
-- **Unified Agent**: https://huggingface.co/spaces/Dessi/gradio-mcp-hack
-  - Includes both intent recognition + pattern discovery tabs
-  - “LLM Settings” accordion lets you paste your own Anthropic/OpenAI/OpenRouter key (stored only in your browser session)
-
-### Option 2: Run Locally (5 minutes)
+### Run Locally (5 minutes)
 
 ```bash
 # Clone the repository
@@ -234,7 +181,7 @@ cp config/activation/audiences.yaml config/activation/audiences.local.yaml
 }
 ```
 
-**With ChatGPT** (via OpenAI Apps SDK - Post-Hackathon):
+**With ChatGPT** (via OpenAI Apps SDK - planned):
 ```json
 {
   "mcpServers": {
@@ -279,6 +226,8 @@ Use the app to iterate quickly on prompt changes, demonstrate behavioral persona
 - All secrets (Google Ads developer token, OAuth client, Meta access token/app secret/account ID) now live in `.env`. Copy `.env.example`, set the `GOOGLE_ADS_*` and `META_*` variables, and the connectors will pick them up automatically. Batch sizes default to 1,000 for Google Ads and 5,000 for Meta (tunable via YAML).
 - Identifiers are automatically normalized and SHA-256 hashed (with optional salt) before leaving your machine. In dry-run mode you’ll see the first few hashes in the output so you can confirm the pipeline without transmitting PII.
 - The `AudienceManager` orchestrates connectors (Google Ads + Meta today, LinkedIn/Trade Desk soon). The **Sync Audience** button in the Bid Optimizer tab lets you paste identifiers (emails/IDs) and push them via Customer Match / Custom Audiences directly from the UI (dry-run by default).
+- **Personalization & Creative configs** live in `config/activation/personalization.yaml` and `config/activation/creative.yaml`. Slots (hero banner, proof bar, etc.), offer rules, and creative brief prompts are all data-driven so you can update experiences without code.
+- `ActivationContext.metadata` now accepts structured hints such as `preferred_channels`, `available_assets`, `creative_history`, and arbitrary personalization snippets. The new modules read those keys to choose slots, offers, and creative briefs before any LLM call is made.
 
 #### Layer 4 How-to Flow
 1. **Intent Analyzer:** Capture structured context and classify the user’s primary intent (required).  
@@ -420,8 +369,8 @@ intent-recognition-agent/
 │   ├── activation/                    # Layer 4: Marketing Activation
 │   │   ├── bidding/                   # Bid optimizer + conversion model ✅
 │   │   ├── audiences/                 # Audience activation (Google Ads ✅)
-│   │   ├── personalization/           # Personalization hooks (planned)
-│   │   └── creative/                  # Creative guidance (planned)
+│   │   ├── personalization/           # Content/email recommendations ✅
+│   │   └── creative/                  # Creative brief generator ✅
 │   │
 │   └── utils/                         # Layer 1: Context Capture
 │       ├── context_builder.py         # Five-dimensional context
@@ -430,7 +379,8 @@ intent-recognition-agent/
 ├── tools/                             # MCP Tools (Track 1)
 │   ├── intent_recognition_mcp.py      # Intent recognition tool ✅
 │   ├── pattern_discovery_mcp.py       # Pattern discovery tool ✅
-│   └── bid_optimizer_mcp.py           # Bid optimization ✅
+│   ├── bid_optimizer_mcp.py           # Bid optimization ✅
+│   └── personalization_mcp.py         # Personalization + creative ✅
 │
 ├── app.py                             # Full Agent (Track 2 - planned)
 │
@@ -439,6 +389,11 @@ intent-recognition-agent/
 │   │   ├── ecommerce.yaml             # Ecommerce intents ✅
 │   │   ├── b2b_saas.yaml              # B2B SaaS (planned)
 │   │   └── financial_services.yaml    # Financial (planned)
+│   ├── activation/
+│   │   ├── audiences.yaml             # Audience export credentials
+│   │   ├── bidding.yaml               # Bid optimizer weights
+│   │   ├── personalization.yaml       # Slot + offer templates (new)
+│   │   └── creative.yaml              # Creative brief template + LLM hints (new)
 │   └── prompts/
 │       └── intent_classification.txt  # Intent prompt template ✅
 │
@@ -451,6 +406,8 @@ intent-recognition-agent/
 │   ├── test_pattern_discovery_integration.py # Pattern discovery tests ✅
 │   ├── test_bid_optimizer.py          # Bid optimizer tests ✅
 │   ├── test_audience_manager.py       # Google Ads connector tests ✅
+│   ├── test_personalization.py        # Content/email recommendation tests ✅
+│   ├── test_creative_generator.py     # Creative brief tests ✅
 │   ├── test_context_builder.py        # Context tests (planned)
 │   └── test_integration.py            # End-to-end tests (planned)
 │
@@ -461,7 +418,7 @@ intent-recognition-agent/
 │
 └── docs/                              # Documentation
     ├── article.md                     # Full research article
-    ├── hack-feasibility.md            # Hackathon adaptation analysis
+    ├── hack-feasibility.md            # Rapid iteration feasibility analysis
     └── openai-apps-integration.md     # OpenAI Apps SDK roadmap
 ```
 
@@ -643,20 +600,20 @@ For comprehensive testing instructions, see [TESTING.md](TESTING.md)
 
 ### Design Philosophy
 
-**Research Implementation**: Prove the hypothesis works
-**Hackathon Validation**: Get real user feedback quickly
+**Research Implementation**: Prove the hypothesis works  
+**Early Validation**: Get real user feedback quickly  
 **Production Deployment**: Scale with confidence
 
-### Key Simplifications for Hackathon
+### Current Simplifications
 
-| Component | Research/Production | Hackathon | Why |
+| Component | Research/Production | Current Build | Why |
 |-----------|-------------------|-----------|-----|
 | **Database** | PostgreSQL | SQLite | No server setup needed |
 | **Caching** | Redis | In-memory dict | Simpler deployment |
 | **API** | FastAPI | Gradio | Built-in MCP support |
 | **Auth** | OAuth2 | Optional basic | Focus on functionality |
 | **Storage** | S3 + BigQuery | Local files | No cloud costs |
-| **Deployment** | Kubernetes | HF Spaces | One-click deploy |
+| **Deployment** | Kubernetes | Local README flow | Keep focus on code |
 
 ### What We Keep (100% Research Functionality)
 
@@ -681,11 +638,11 @@ For comprehensive testing instructions, see [TESTING.md](TESTING.md)
 
 ### Why This Matters
 
-The same MCP foundation that powers our hackathon submission will work in **ChatGPT** via OpenAI Apps SDK, reaching **700M+ weekly users**.
+The same MCP foundation running locally will work in **ChatGPT** via OpenAI Apps SDK, reaching **700M+ weekly users** once approved.
 
 ### Timeline
 
-* HuggingFace MCP Hackathon
+* MVP Validation
 - Validate core functionality
 - Gather user feedback
 - Prove technical feasibility
@@ -708,7 +665,7 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 - ✅ JSON responses
 - ✅ SSE transport
 
-**What We'll Add** (Post-hackathon):
+**What We'll Add Next**:
 - Widget rendering (HTML/JS visualizations)
 - Enhanced metadata (`_meta.openai/outputTemplate`)
 - OAuth 2.1 for production
@@ -716,43 +673,14 @@ The same MCP foundation that powers our hackathon submission will work in **Chat
 
 ---
 
-## 🏅 Hackathon Submission Details
-
-### Track 1: Building MCP (Enterprise)
-
-**Tag**: `building-mcp-track-enterprise`
-
-**What We're Submitting**:
-- ✅ Intent Recognition MCP Server ([tools/intent_recognition_mcp.py](tools/intent_recognition_mcp.py))
-- ✅ Pattern Discovery MCP Server ([tools/pattern_discovery_mcp.py](tools/pattern_discovery_mcp.py))
-- ✅ Bid Optimizer MCP Server ([tools/bid_optimizer_mcp.py](tools/bid_optimizer_mcp.py))
-- Works standalone in Cursor, Claude Desktop, ChatGPT
-- Solves real business problem ($500B digital marketing market)
-- Complete Layers 2-4 (bid strategy beta) from research article
-
-### Track 2: MCP in Action
-
-**Tag**: `mcp-in-action-track-enterprise`
-
-**What We're Building**:
-- Full marketing intelligence agent
-- Chat interface for campaign analysis
-- Autonomous use of intent recognition + pattern discovery + bid optimization
-- Real-time recommendations
-
----
-
 ## 🤝 Contributing
 
-This is both a research project and a hackathon submission. We welcome:
+This is both a research project and an evolving production system. We welcome:
 
-**During Hackathon** (Nov 14-30):
 - Bug reports and fixes
 - Documentation improvements
 - Additional test scenarios
 - UX feedback
-
-**Post-Hackathon**:
 - Research contributions (new intent taxonomies, validation studies)
 - Production features (ad platform integrations, Layer 4 activation)
 - Performance optimizations
@@ -788,10 +716,9 @@ If you use this work in research or production, please cite:
 ## 🔗 Links
 
 - **Research Article**: [The Geometry of Intention](https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing)
-- **HuggingFace Space**: [Coming Soon]
-- **Demo Video**: [Coming Soon]
+- **Live Demo**: Coming Soon
+- **Demo Video**: Coming Soon
 - **GitHub Repository**: [GitHub URL](https://github.com/ai-knowledge-hub/deep-dive-analysis-intent-recognition-agent)
-- **Hackathon**: [HF MCP Hackathon](https://huggingface.co/MCP-1st-Birthday)
 
 ---
 

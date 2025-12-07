@@ -99,13 +99,7 @@ The system has four layers that work together:
 
 ### Installation
 
-#### Option 1: Try the Live Demo (No Installation)
-
-Visit the HuggingFace Space: `https://huggingface.co/spaces/Dessi/gradio-mcp-hack`
-
-**Note:** The live demo lets you paste your own API key in the browser (it's never stored on servers). Perfect for testing!
-
-#### Option 2: Run Locally
+#### Run Locally
 
 **Step 1: Download the Code**
 

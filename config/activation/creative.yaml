@@ -1,0 +1,28 @@
+brief_template:
+  sections:
+    objective:
+      prompt: "Summarize the marketing objective for this persona and intent."
+    audience_insight:
+      prompt: "Highlight the key behavioral signals and constraints we must honor."
+    key_message:
+      prompt: "Provide the single-minded message for the creative."
+    proof_points:
+      prompt: "List 2 proof points or benefits aligned to the persona metrics."
+    tone_guidance:
+      prompt: "Describe tone/voice recommendations (e.g., authoritative, energetic)."
+    call_to_action:
+      prompt: "Suggest a CTA aligned with the predicted next action."
+
+llm:
+  enabled: true
+  notes: "Uses the default BYOK LLM provider (Anthropic/OpenAI/OpenRouter) configured in .env or the UI."
+  max_tokens: 400
+  temperature: 0.3
+
+asset_preferences:
+  ready_to_purchase:
+    headline_style: "direct"
+    imagery: "product_closeup"
+  compare_options:
+    headline_style: "comparative"
+    imagery: "side_by_side"

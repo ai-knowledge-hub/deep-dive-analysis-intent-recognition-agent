@@ -6,9 +6,11 @@ copy templates, or LLM-powered content suggestions for marketing teams.
 """
 
 from ..base import ActivationComponent, ActivationContext, ActivationResult
+from .generator import CreativeBriefGenerator
 
 __all__ = [
     "ActivationComponent",
     "ActivationContext",
     "ActivationResult",
+    "CreativeBriefGenerator",
 ]

@@ -7,9 +7,15 @@ next-best-action logic).
 """
 
 from ..base import ActivationComponent, ActivationContext, ActivationResult
+from .content import ContentPersonalizationEngine
+from .recommendations import RecommendationSelector
+from .email import TriggeredEmailPlanner
 
 __all__ = [
     "ActivationComponent",
     "ActivationContext",
     "ActivationResult",
+    "ContentPersonalizationEngine",
+    "RecommendationSelector",
+    "TriggeredEmailPlanner",
 ]

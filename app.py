@@ -26,10 +26,12 @@ from src.activation import (
     AudienceCohort,
     default_audience_manager,
     ActivationError,
+    Layer4ActivationPlaybook,
 )
 from src.intent import IntentRecognitionEngine, IntentTaxonomy, LLMProviderFactory
 from src.utils import ContextBuilder
 from tools.pattern_discovery_mcp import discover_behavioral_patterns
+from src.activation.personalization.config_loader import load_personalization_config
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,9 @@ PATTERN_SAMPLE_PATH = Path("data/sample_user_histories.csv")
 ARTICLE_URL = "https://ai-news-hub.performics-labs.com/analysis/geometry-of-intention-llms-human-goals-marketing"
 LLM_PROVIDER_CHOICES = ["anthropic", "openai", "openrouter"]
 CONTEXT_BUILDER = ContextBuilder()
+PERSONALIZATION_CONFIG = load_personalization_config("config/activation/personalization.yaml")
+PERSONALIZATION_SLOT_OPTIONS = sorted((PERSONALIZATION_CONFIG.get("slots") or {}).keys())
+PERSONALIZATION_CHANNELS = ["web", "app", "email"]
 
 
 def _load_sample_contexts() -> List[Dict[str, Any]]:
@@ -265,6 +270,139 @@ def _parse_identifiers(raw_text: str) -> List[str]:
         if cleaned:
             tokens.append(cleaned)
     return tokens
+
+
+def _parse_json_or_text(raw_text: str) -> Optional[Any]:
+    """Parse optional JSON input; fall back to trimmed text."""
+    if not raw_text or not raw_text.strip():
+        return None
+    text = raw_text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def _prepare_activation_context(
+    use_manual_intent: bool,
+    manual_intent_label: str,
+    manual_confidence: float,
+    persona_name: str,
+    persona_description: str,
+    persona_size: float,
+    persona_share_percent: float,
+    persona_conversion_percent: float,
+    persona_ltv_index: float,
+    historical_cvr_percent: float,
+    recent_roas: float,
+    channel_choice: str,
+    user_query: str,
+    page_type: str,
+    previous_actions: str,
+    time_on_page: int,
+    session_history: str,
+    device_type: str,
+    traffic_source: str,
+    scroll_depth: float,
+    clicks_count: int,
+    llm_settings: Optional[Dict[str, Any]],
+    metadata_overrides: Optional[Dict[str, Any]] = None,
+) -> Tuple[
+    Optional[Dict[str, Any]],
+    Optional[IntentSignal],
+    Optional[ActivationContext],
+    Optional[Dict[str, Any]],
+    Optional[str],
+]:
+    """Shared helper to resolve intent/persona and produce an activation context."""
+    if use_manual_intent:
+        label = manual_intent_label or "compare_options"
+        confidence = max(0.0, min(1.0, manual_confidence or 0.55))
+        evidence = ["Manual override"]
+        intent_payload = {
+            "primary_intent": label,
+            "confidence": confidence,
+            "source": "manual_override",
+        }
+    else:
+        engine, engine_error = _resolve_engine(llm_settings)
+        if engine is None:
+            return None, None, None, None, engine_error or "Intent engine not configured."
+        try:
+            intent_payload = engine.recognize_intent(
+                user_query=user_query,
+                page_type=page_type,
+                previous_actions=previous_actions,
+                time_on_page=time_on_page,
+                session_history=session_history,
+                device_type=device_type,
+                traffic_source=traffic_source,
+                scroll_depth=scroll_depth,
+                clicks_count=clicks_count,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return None, None, None, None, str(exc)
+        label = intent_payload.get("primary_intent", manual_intent_label or "unknown")
+        confidence = float(intent_payload.get("confidence", manual_confidence or 0.55))
+        evidence = intent_payload.get("behavioral_evidence") or []
+
+    intent_def = TAXONOMY.get_intent_definition(label) if TAXONOMY else {}
+    stage = intent_def.get("stage") if intent_def else None
+    intent_signal = IntentSignal(
+        label=label,
+        confidence=max(0.0, min(1.0, confidence)),
+        stage=stage,
+        evidence=evidence,
+        metadata={"source": intent_payload.get("source", "engine")},
+    )
+
+    persona_profile = _build_persona_profile(
+        persona_name,
+        persona_description,
+        persona_size,
+        persona_share_percent,
+        persona_conversion_percent,
+        persona_ltv_index,
+        intent_signal.label,
+    )
+
+    metrics: Dict[str, float] = {}
+    hist_ratio = _percent_to_ratio(historical_cvr_percent)
+    if hist_ratio is not None:
+        metrics["historical_cvr"] = hist_ratio
+    if recent_roas:
+        metrics["recent_roas"] = recent_roas
+
+    context_view = CONTEXT_BUILDER.build_context(
+        user_query=user_query,
+        page_type=page_type,
+        previous_actions=previous_actions,
+        time_on_page=time_on_page,
+        session_history=session_history,
+        device_type=device_type,
+        traffic_source=traffic_source,
+        scroll_depth=scroll_depth,
+        clicks_count=clicks_count,
+    )
+
+    metadata: Dict[str, Any] = {
+        "channel": channel_choice or "default",
+        "context_preview": context_view,
+    }
+    if metadata_overrides:
+        for key, value in metadata_overrides.items():
+            if isinstance(value, dict) and isinstance(metadata.get(key), dict):
+                metadata[key].update(value)
+            else:
+                metadata[key] = value
+
+    activation_context = ActivationContext(
+        intents=[intent_signal],
+        persona=persona_profile,
+        metrics=metrics or None,
+        metadata=metadata,
+    )
+    return intent_payload, intent_signal, activation_context, context_view, None
 
 
 def save_llm_settings(
@@ -482,91 +620,46 @@ def run_bid_optimizer_playbook(
         msg = BID_OPTIMIZER_ERROR or "Bid optimizer not initialized."
         return {"error": msg}, {"error": msg}, f"❌ {msg}"
 
-    intent_payload: Dict[str, Any]
-    label: str
-    confidence: float
-    evidence: List[str]
-
-    if use_manual_intent:
-        label = manual_intent_label or "compare_options"
-        confidence = max(0.0, min(1.0, manual_confidence or 0.55))
-        evidence = ["Manual override"]
-        intent_payload = {
-            "primary_intent": label,
-            "confidence": confidence,
-            "source": "manual_override",
-        }
-    else:
-        engine, engine_error = _resolve_engine(llm_settings)
-        if engine is None:
-            error_msg = engine_error or "Intent engine not configured."
-            return {"error": error_msg}, {"error": error_msg}, f"❌ {error_msg}"
-        try:
-            intent_payload = engine.recognize_intent(
-                user_query=user_query,
-                page_type=page_type,
-                previous_actions=previous_actions,
-                time_on_page=time_on_page,
-                session_history=session_history,
-                device_type=device_type,
-                traffic_source=traffic_source,
-                scroll_depth=scroll_depth,
-                clicks_count=clicks_count,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return (
-                {"error": str(exc)},
-                {"error": str(exc)},
-                f"❌ Intent analysis failed: {exc}",
-            )
-        label = intent_payload.get("primary_intent", manual_intent_label or "unknown")
-        confidence = float(intent_payload.get("confidence", manual_confidence or 0.55))
-        evidence = intent_payload.get("behavioral_evidence") or []
-
-    intent_def = TAXONOMY.get_intent_definition(label) if TAXONOMY else {}
-    stage = intent_def.get("stage") if intent_def else None
-
-    intent_signal = IntentSignal(
-        label=label,
-        confidence=max(0.0, min(1.0, confidence)),
-        stage=stage,
-        evidence=evidence,
-        metadata={"source": intent_payload.get("source", "engine")},
-    )
-
-    persona_profile = _build_persona_profile(
+    (
+        intent_payload,
+        intent_signal,
+        activation_context,
+        _,
+        error,
+    ) = _prepare_activation_context(
+        use_manual_intent,
+        manual_intent_label,
+        manual_confidence,
         persona_name,
         persona_description,
         persona_size,
         persona_share_percent,
         persona_conversion_percent,
         persona_ltv_index,
-        intent_signal.label,
+        historical_cvr_percent,
+        recent_roas,
+        channel_choice,
+        user_query,
+        page_type,
+        previous_actions,
+        time_on_page,
+        session_history,
+        device_type,
+        traffic_source,
+        scroll_depth,
+        clicks_count,
+        llm_settings,
     )
-
-    metrics: Dict[str, float] = {}
-    hist_ratio = _percent_to_ratio(historical_cvr_percent)
-    if hist_ratio is not None:
-        metrics["historical_cvr"] = hist_ratio
-    if recent_roas:
-        metrics["recent_roas"] = recent_roas
-
-    activation_context = ActivationContext(
-        intents=[intent_signal],
-        persona=persona_profile,
-        metrics=metrics or None,
-        metadata={
-            "channel": channel_choice or "default",
-            "context_preview": context_view,
-        },
-    )
+    if error or intent_payload is None or intent_signal is None or activation_context is None:
+        error_msg = error or "Unable to prepare activation context."
+        return {"error": error_msg}, {"error": error_msg}, f"❌ {error_msg}"
 
     recommendation = BID_OPTIMIZER.recommend(activation_context)
     recommendation_dict = asdict(recommendation)
 
     summary_lines = [
         f"**Channel:** {channel_choice or 'default'}",
-        f"**Intent Used:** {label.replace('_', ' ').title()} ({intent_signal.confidence:.0%})",
+        f"**Intent Used:** {intent_signal.label.replace('_', ' ').title()} ({intent_signal.confidence:.0%})",
         f"**Bid Modifier:** {recommendation.bid_modifier:+.0%}",
         f"**Adjusted Bid:** ${recommendation.base_bid or 0:.2f}",
         f"**Pacing Guidance:** {recommendation.metadata.get('pacing', 'monitor')}",
@@ -574,6 +667,140 @@ def run_bid_optimizer_playbook(
     ]
 
     return intent_payload, recommendation_dict, "\n".join(summary_lines)
+
+
+def run_activation_playbook(
+    use_manual_intent: bool,
+    manual_intent_label: str,
+    manual_confidence: float,
+    persona_name: str,
+    persona_description: str,
+    persona_size: float,
+    persona_share_percent: float,
+    persona_conversion_percent: float,
+    persona_ltv_index: float,
+    historical_cvr_percent: float,
+    recent_roas: float,
+    primary_channel: str,
+    preferred_channels: List[str],
+    available_slots: List[str],
+    has_budget_constraint: bool,
+    has_time_constraint: bool,
+    has_knowledge_gap: bool,
+    available_assets_text: str,
+    creative_history_text: str,
+    use_llm_brief: bool,
+    user_query: str,
+    page_type: str,
+    previous_actions: str,
+    time_on_page: int,
+    session_history: str,
+    device_type: str,
+    traffic_source: str,
+    scroll_depth: float,
+    clicks_count: int,
+    llm_settings: Optional[Dict[str, Any]],
+) -> Tuple[Any, Any, Any, Any, Any, str]:
+    """Run personalization + creative playbook and return structured outputs."""
+    preferred = preferred_channels or [primary_channel or "web"]
+    overrides: Dict[str, Any] = {
+        "preferred_channels": preferred,
+        "personalization_context": {
+            "available_slots": available_slots,
+            "constraints": {
+                "has_budget_constraint": has_budget_constraint,
+                "has_time_constraint": has_time_constraint,
+                "has_knowledge_gap": has_knowledge_gap,
+            },
+        },
+        "creative_options": {"mode": "llm" if use_llm_brief else "template"},
+    }
+
+    assets = _parse_json_or_text(available_assets_text)
+    if assets:
+        overrides["available_assets"] = assets
+    creative_hist = _parse_json_or_text(creative_history_text)
+    if creative_hist:
+        overrides["creative_history"] = creative_hist
+
+    (
+        intent_payload,
+        intent_signal,
+        activation_context,
+        _,
+        error,
+    ) = _prepare_activation_context(
+        use_manual_intent,
+        manual_intent_label,
+        manual_confidence,
+        persona_name,
+        persona_description,
+        persona_size,
+        persona_share_percent,
+        persona_conversion_percent,
+        persona_ltv_index,
+        historical_cvr_percent,
+        recent_roas,
+        primary_channel,
+        user_query,
+        page_type,
+        previous_actions,
+        time_on_page,
+        session_history,
+        device_type,
+        traffic_source,
+        scroll_depth,
+        clicks_count,
+        llm_settings,
+        metadata_overrides=overrides,
+    )
+
+    if error or intent_payload is None or intent_signal is None or activation_context is None:
+        error_msg = error or "Unable to prepare activation context."
+        return (
+            {"error": error_msg},
+            {},
+            {},
+            {},
+            {},
+            f"❌ {error_msg}",
+        )
+
+    try:
+        playbook = Layer4ActivationPlaybook(include_bidding=False, use_llm_brief=use_llm_brief)
+        result = playbook.run(activation_context)
+    except Exception as exc:  # noqa: BLE001
+        msg = f"Activation playbook failed: {exc}"
+        return (
+            intent_payload,
+            {},
+            {},
+            {},
+            {},
+            f"❌ {msg}",
+        )
+
+    actions = result.actions or []
+    slot_actions = [a for a in actions if a.get("type") == "content_slot"]
+    offer_actions = [a for a in actions if a.get("type") == "offer"]
+    recommendation_actions = [a for a in actions if a.get("type") == "recommendation"]
+    email_actions = [a for a in actions if a.get("type") == "email_playbook"]
+    creative_actions = [a for a in actions if a.get("type") == "creative_brief"]
+
+    slots_payload = {"slots": slot_actions, "offers": offer_actions}
+    recommendations_payload = {"items": recommendation_actions}
+    email_payload = email_actions[0] if email_actions else {}
+    creative_payload = creative_actions[0] if creative_actions else {}
+    diagnostics = "\n".join(result.diagnostics) if result.diagnostics else "Activation playbook executed."
+
+    return (
+        intent_payload,
+        slots_payload,
+        recommendations_payload,
+        email_payload,
+        creative_payload,
+        diagnostics,
+    )
 
 
 def sync_audience_playbook(
@@ -613,72 +840,44 @@ def sync_audience_playbook(
     if not identifiers:
         return {"error": "No identifiers supplied."}, "❌ Provide email/customer IDs to sync."
 
-    if use_manual_intent:
-        label = manual_intent_label or "compare_options"
-        confidence = max(0.0, min(1.0, manual_confidence or 0.55))
-        evidence = ["Manual override"]
-        intent_payload = {
-            "primary_intent": label,
-            "confidence": confidence,
-            "source": "manual_override",
-        }
-    else:
-        engine, engine_error = _resolve_engine(llm_settings)
-        if engine is None:
-            error_msg = engine_error or "Intent engine not configured."
-            return {"error": error_msg}, f"❌ {error_msg}"
-        try:
-            intent_payload = engine.recognize_intent(
-                user_query=user_query,
-                page_type=page_type,
-                previous_actions=previous_actions,
-                time_on_page=time_on_page,
-                session_history=session_history,
-                device_type=device_type,
-                traffic_source=traffic_source,
-                scroll_depth=scroll_depth,
-                clicks_count=clicks_count,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return {"error": str(exc)}, f"❌ Intent analysis failed: {exc}"
-        label = intent_payload.get("primary_intent", manual_intent_label or "unknown")
-        confidence = float(intent_payload.get("confidence", manual_confidence or 0.55))
-        evidence = intent_payload.get("behavioral_evidence") or []
-
-    persona_profile = _build_persona_profile(
+    (
+        intent_payload,
+        intent_signal,
+        context,
+        _,
+        error,
+    ) = _prepare_activation_context(
+        use_manual_intent,
+        manual_intent_label,
+        manual_confidence,
         persona_name,
         persona_description,
         persona_size,
         persona_share_percent,
         persona_conversion_percent,
         persona_ltv_index,
-        label,
+        historical_cvr_percent,
+        recent_roas,
+        audience_channel,
+        user_query,
+        page_type,
+        previous_actions,
+        time_on_page,
+        session_history,
+        device_type,
+        traffic_source,
+        scroll_depth,
+        clicks_count,
+        llm_settings,
+        metadata_overrides={"source": "bid_optimizer"},
     )
-
-    metrics: Dict[str, float] = {}
-    hist_ratio = _percent_to_ratio(historical_cvr_percent)
-    if hist_ratio is not None:
-        metrics["historical_cvr"] = hist_ratio
-    if recent_roas:
-        metrics["recent_roas"] = recent_roas
-
-    context = ActivationContext(
-        intents=[
-            IntentSignal(
-                label=label,
-                confidence=max(0.0, min(1.0, confidence)),
-                stage=(TAXONOMY.get_intent_definition(label) or {}).get("stage") if TAXONOMY else None,
-                evidence=evidence,
-            )
-        ],
-        persona=persona_profile,
-        metrics=metrics or None,
-        metadata={"channel": audience_channel, "source": "bid_optimizer"},
-    )
+    if error or intent_payload is None or intent_signal is None or context is None:
+        error_msg = error or "Unable to prepare activation context."
+        return {"error": error_msg}, f"❌ {error_msg}"
 
     cohort = AudienceCohort(
-        name=cohort_name or f"{label}-cohort",
-        description=cohort_description or f"Auto-synced from Bid Optimizer ({label})",
+        name=cohort_name or f"{intent_signal.label}-cohort",
+        description=cohort_description or f"Auto-synced from Bid Optimizer ({intent_signal.label})",
         user_ids=identifiers,
     )
 
@@ -980,6 +1179,171 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                     elem_id="activation-next",
                 )
 
+            gr.Markdown("### Personalization + Creative Playground")
+            gr.Markdown(
+                "Generate slot-level content, recommendations, triggered emails, and creative briefs from the same context used by the intent engine."
+            )
+            act_use_manual_intent = gr.Checkbox(
+                label="Manual Intent Override",
+                value=ENGINE is None,
+                info="Enable to skip the LLM and enter intent+confidence manually.",
+            )
+            act_manual_intent_label = gr.Dropdown(
+                label="Intent Label",
+                choices=TAXONOMY.get_all_intent_labels() if TAXONOMY else [],
+                value="ready_to_purchase",
+            )
+            act_manual_confidence = gr.Slider(
+                label="Intent Confidence (Manual Mode)",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.01,
+                value=0.8,
+            )
+
+            gr.Markdown("#### Persona & Performance Signals")
+            with gr.Row():
+                act_persona_name = gr.Textbox(label="Persona Name", value="High-Intent Researchers")
+                act_persona_description = gr.Textbox(
+                    label="Persona Description",
+                    value="Users seeking proof before committing.",
+                )
+            with gr.Row():
+                act_persona_size = gr.Number(label="Persona Size (# users)", value=120)
+                act_persona_share = gr.Slider(label="Persona Share (%)", minimum=0, maximum=100, step=1, value=25)
+            with gr.Row():
+                act_persona_conversion = gr.Slider(
+                    label="Persona Conversion Rate (%)", minimum=0, maximum=100, step=1, value=52
+                )
+                act_persona_ltv = gr.Number(label="Persona LTV Index (1.0 = avg)", value=1.15)
+            with gr.Row():
+                act_historical_cvr = gr.Slider(
+                    label="Historical Campaign CVR (%)", minimum=0, maximum=100, step=1, value=38
+                )
+                act_recent_roas = gr.Number(label="Recent ROAS", value=3.6)
+
+            gr.Markdown("#### Personalization Controls")
+            with gr.Row():
+                act_primary_channel = gr.Dropdown(
+                    label="Primary Channel",
+                    choices=PERSONALIZATION_CHANNELS,
+                    value=PERSONALIZATION_CHANNELS[0],
+                )
+                act_preferred_channels = gr.CheckboxGroup(
+                    label="Preferred Channels",
+                    choices=PERSONALIZATION_CHANNELS,
+                    value=["web", "email"],
+                )
+            act_available_slots = gr.CheckboxGroup(
+                label="Available Slots",
+                choices=PERSONALIZATION_SLOT_OPTIONS or ["hero_banner", "proof_bar"],
+                value=PERSONALIZATION_SLOT_OPTIONS or ["hero_banner", "proof_bar"],
+            )
+            with gr.Row():
+                act_budget_constraint = gr.Checkbox(label="Budget Constraint", value=False)
+                act_time_constraint = gr.Checkbox(label="Time Constraint", value=False)
+                act_knowledge_constraint = gr.Checkbox(label="Knowledge Gap", value=False)
+
+            act_available_assets = gr.Textbox(
+                label="Available Assets (JSON or notes)",
+                placeholder='{"hero": "lifestyle_image.jpg", "offer": "10OFF"}',
+                lines=2,
+            )
+            act_creative_history = gr.Textbox(
+                label="Creative History / Notes",
+                placeholder="Past campaigns that worked, tone preferences, compliance guardrails...",
+                lines=2,
+            )
+            act_use_llm_brief = gr.Checkbox(label="Use LLM for Creative Brief", value=True)
+
+            gr.Markdown("#### Context Inputs (mirrors Intent Analyzer)")
+            act_user_query = gr.Textbox(label="User Query", placeholder="nike pegasus discount code")
+            act_page_type = gr.Dropdown(
+                label="Page Type",
+                choices=[
+                    "product_detail",
+                    "category",
+                    "search_results",
+                    "cart",
+                    "checkout",
+                    "homepage",
+                    "blog_post",
+                    "comparison_page",
+                ],
+                value="product_detail",
+            )
+            act_previous_actions = gr.Textbox(
+                label="Previous Actions", placeholder="viewed_product,read_reviews,checked_shipping"
+            )
+            act_time_on_page = gr.Slider(label="Time on Page (seconds)", minimum=0, maximum=600, step=5, value=200)
+            act_session_history = gr.Textbox(
+                label="Session History JSON",
+                placeholder='[{"intent": "compare_options", "timestamp": "2025-01-02T12:00:00"}]',
+                lines=3,
+            )
+            with gr.Row():
+                act_device_type = gr.Dropdown(label="Device", choices=["desktop", "mobile", "tablet"], value="desktop")
+                act_traffic_source = gr.Dropdown(
+                    label="Traffic Source",
+                    choices=["direct", "search_google", "social_meta", "email", "affiliate"],
+                    value="search_google",
+                )
+            with gr.Row():
+                act_scroll_depth = gr.Slider(label="Scroll Depth (%)", minimum=0, maximum=100, step=5, value=70)
+                act_clicks_count = gr.Slider(label="Clicks This Session", minimum=0, maximum=20, step=1, value=6)
+
+            activation_button = gr.Button("Run Personalization Playbook", variant="primary")
+            activation_intent_json = gr.JSON(label="Intent Input Preview")
+            activation_slots_json = gr.JSON(label="Content Slots & Offers")
+            activation_recs_json = gr.JSON(label="Recommendations")
+            activation_email_json = gr.JSON(label="Email Playbook")
+            activation_creative_json = gr.JSON(label="Creative Brief")
+            activation_summary = gr.Markdown("Click the button to generate guidance.")
+
+            activation_button.click(
+                fn=run_activation_playbook,
+                inputs=[
+                    act_use_manual_intent,
+                    act_manual_intent_label,
+                    act_manual_confidence,
+                    act_persona_name,
+                    act_persona_description,
+                    act_persona_size,
+                    act_persona_share,
+                    act_persona_conversion,
+                    act_persona_ltv,
+                    act_historical_cvr,
+                    act_recent_roas,
+                    act_primary_channel,
+                    act_preferred_channels,
+                    act_available_slots,
+                    act_budget_constraint,
+                    act_time_constraint,
+                    act_knowledge_constraint,
+                    act_available_assets,
+                    act_creative_history,
+                    act_use_llm_brief,
+                    act_user_query,
+                    act_page_type,
+                    act_previous_actions,
+                    act_time_on_page,
+                    act_session_history,
+                    act_device_type,
+                    act_traffic_source,
+                    act_scroll_depth,
+                    act_clicks_count,
+                    llm_state,
+                ],
+                outputs=[
+                    activation_intent_json,
+                    activation_slots_json,
+                    activation_recs_json,
+                    activation_email_json,
+                    activation_creative_json,
+                    activation_summary,
+                ],
+            )
+
         with gr.Tab("Bid Optimizer"):
             intent_choices = TAXONOMY.get_all_intent_labels() if TAXONOMY else []
             gr.Markdown(
@@ -1193,6 +1557,13 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
                         "- Tool name: `optimize_bid`\n"
                         "- Endpoint: `http://localhost:7862/gradio_api/mcp/sse`"
                     )
+                with gr.Column():
+                    gr.Markdown("#### Personalization MCP (port 7863)")
+                    gr.Markdown(
+                        "- Script: `python tools/personalization_mcp.py`\n"
+                        "- Tool name: `personalize_activation`\n"
+                        "- Endpoint: `http://localhost:7863/gradio_api/mcp/sse`"
+                    )
 
             gr.Markdown("#### Cursor / Claude Config Snippets")
             config_tabs = gr.Tabs()
@@ -1210,6 +1581,9 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
     },
     "bid-optimizer": {
       "url": "http://localhost:7862/gradio_api/mcp/sse"
+    },
+    "personalization": {
+      "url": "http://localhost:7863/gradio_api/mcp/sse"
     }
   }
 }
@@ -1237,6 +1611,11 @@ with gr.Blocks(title="Context-Conditioned Intent Recognition", analytics_enabled
       "command": "python",
       "args": ["tools/bid_optimizer_mcp.py"],
       "port": 7862
+    },
+    "personalization": {
+      "command": "python",
+      "args": ["tools/personalization_mcp.py"],
+      "port": 7863
     }
   }
 }

@@ -1,0 +1,108 @@
+slots:
+  hero_banner:
+    description: "Primary hero panel on homepage or landing page."
+    supported_channels:
+      - web
+      - app
+    allowed_intents:
+      - ready_to_purchase
+      - evaluate_fit
+      - compare_options
+    constraint_overrides:
+      budget:
+        copy_variant: "value_benefits"
+        cta: "view_offers"
+      time:
+        copy_variant: "fast_shipping"
+        cta: "buy_now"
+    default_content:
+      headline: "Discover the perfect product"
+      subcopy: "Let us help you decide with expert guidance."
+      cta: "Explore options"
+
+  proof_bar:
+    description: "Secondary strip with reviews, stats, or urgency copy."
+    supported_channels:
+      - web
+      - email
+    allowed_intents:
+      - compare_options
+      - price_discovery
+      - deal_seeking
+    default_content:
+      headline: "4.9★ average rating"
+      subcopy: "Trusted by over 250k customers."
+      cta: "See testimonials"
+
+offers:
+  high_intent:
+    intents:
+      - ready_to_purchase
+    persona_conditions:
+      min_ltv_index: 1.1
+    recommendation:
+      type: "monetary"
+      description: "Free express shipping and VIP support"
+  deal_seeker:
+    intents:
+      - deal_seeking
+      - price_discovery
+    recommendation:
+      type: "percentage"
+      description: "Limited 10% offer for price-sensitive cohorts"
+
+channel_rules:
+  web:
+    priority_slots:
+      - hero_banner
+      - proof_bar
+    fallbacks:
+      - proof_bar
+  email:
+    priority_slots:
+      - proof_bar
+
+recommendations:
+  default:
+    - type: "content_hub"
+      id: "buying_guide"
+      label: "Link to relevant buying guide"
+      description: "Surface research resources when no specific rule matches."
+  intents:
+    ready_to_purchase:
+      - type: "product"
+        id: "fast_checkout_bundle"
+        label: "Bundle offer for express purchase"
+        description: "Highlight fast shipping bundle for decisive users."
+    compare_options:
+      - type: "comparison"
+        id: "side_by_side_chart"
+        label: "Comparison chart between top products"
+        description: "Enable easy contrast for evaluators."
+    deal_seeking:
+      - type: "promotion"
+        id: "limited_offer"
+        label: "Timeboxed discount with countdown"
+        description: "Encourage conversion with urgency."
+
+email_playbooks:
+  ready_to_purchase:
+    subject: "Finish your purchase today"
+    delay_minutes: 30
+    steps:
+      - type: "reminder"
+        message: "Still interested? Lock in inventory now."
+      - type: "social_proof"
+        message: "Here's why similar shoppers loved it."
+  deal_seeking:
+    subject: "Exclusive savings tailored for you"
+    delay_minutes: 120
+    steps:
+      - type: "promotion"
+        message: "Apply this limited code during checkout."
+  default:
+    subject: "Helpful resources based on your research"
+    delay_minutes: 180
+    steps:
+      - type: "content"
+        message: "Top guides and comparisons for where you left off."

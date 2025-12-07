@@ -68,6 +68,11 @@ class ActivationContext:
         persona: Optional persona descriptor from Pattern Discovery.
         metrics: Observed performance metrics (conversion rate, AOV, etc.).
         metadata: Free-form dictionary for channel-specific fields.
+            Expected optional keys:
+                - preferred_channels: list of activation channels to prioritize.
+                - available_assets: dict describing reusable creative assets.
+                - creative_history: prior creative performance metrics/logs.
+                - personalization_context: ad-hoc signals for slot rules.
     """
 
     intents: List[IntentSignal]
